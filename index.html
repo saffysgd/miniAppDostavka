@@ -23,14 +23,16 @@
   .card { background: var(--surface); border-radius: 14px; border: 1px solid var(--line); }
   .btn-primary { width:100%; padding:14px 0; border-radius:12px; border:none; background:var(--accent); color:#1A1300; font-weight:700; font-size:15px; margin-top:6px; }
   .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-  .field { margin-bottom: 14px; }
+  .field { margin-bottom: 14px; min-width: 0; }
   .field-label { font-size:12px; color:var(--text-dim); margin-bottom:6px; }
-  .input { width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--text); font-size:14px; }
+  .input { width:100%; min-width: 0; padding:11px 12px; border-radius:10px; border:1.5px solid #3D424B; background:#1B1E23; color:var(--text); font-size:14px; }
   .input.error { border-color: var(--bad); outline-color: var(--bad); }
   .input-hint { font-size:11px; color:var(--text-faint); margin-top:4px; }
   .input-hint.error { color: var(--bad); }
+  .form-row { display:flex; gap:14px; min-width:0; }
+  .form-row > .field { flex:1; min-width:0; }
   .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:flex-end; justify-content:center; z-index:50; }
-  .modal-sheet { background: var(--surface); width:100%; max-width:480px; border-radius:22px 22px 0 0; padding:18px 20px 28px; max-height:88vh; overflow-y:auto; border:1px solid var(--line); border-bottom:none; }
+  .modal-sheet { background: var(--surface); width:100%; max-width:480px; border-radius:22px 22px 0 0; padding:18px 20px 28px; max-height:88vh; overflow-y:auto; overflow-x:hidden; border:1px solid var(--line); border-bottom:none; box-sizing:border-box; }
   .icon-btn { background:var(--surface); border:1px solid var(--line); border-radius:8px; width:28px; height:28px; display:flex; align-items:center; justify-content:center; color:var(--text-dim); }
   .toast { position:fixed; bottom:90px; left:50%; transform:translateX(-50%); background:var(--bad); color:#fff; padding:8px 16px; border-radius:10px; font-size:13px; z-index:100; }
   .toast.success { background: var(--good); }
@@ -216,14 +218,33 @@ function showToast(msg, type="error") {
   toastTimeout = setTimeout(() => { el.remove(); errorMsg=""; }, 3000);
 }
 
-// ===================== RENDER: разбитый =====================
+// ===================== RENDER (fixed-order sections) =====================
 const root = document.getElementById("root");
+
+// Порядок закреплён один раз при первом рендере — это чинит баг, когда
+// секция, которая то появляется, то исчезает (например "Экономика поездок"
+// или блок дней недели), после повторного появления не улетает вниз списка.
+const SECTION_ORDER = [
+  "header-section", "range-tabs", "period-nav", "main-card",
+  "goal-card-section", "last7-section", "weekday-section",
+  "economics-section", "list-section",
+];
+function ensureSections() {
+  SECTION_ORDER.forEach(id => {
+    if (!document.getElementById(id)) {
+      const el = document.createElement("div");
+      el.id = id;
+      root.appendChild(el);
+    }
+  });
+}
 
 function renderAll() {
   if (loading) {
     root.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:var(--text-dim)">Загрузка...</div>`;
     return;
   }
+  ensureSections();
   renderHeader();
   renderRangeTabs();
   renderPeriodNav();
@@ -238,13 +259,7 @@ function renderAll() {
 }
 
 function renderHeader() {
-  let el = document.getElementById("header-section");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "header-section";
-    root.appendChild(el);
-  }
-  el.innerHTML = `
+  document.getElementById("header-section").innerHTML = `
     <div style="padding:22px 20px 16px;display:flex;justify-content:space-between;align-items:flex-start">
       <div>
         <div style="display:flex;align-items:baseline;gap:8px">
@@ -258,12 +273,7 @@ function renderHeader() {
 }
 
 function renderRangeTabs() {
-  let el = document.getElementById("range-tabs");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "range-tabs";
-    root.appendChild(el);
-  }
+  const el = document.getElementById("range-tabs");
   el.style.cssText = "display:flex;gap:6px;padding:0 20px;margin-bottom:14px";
   el.innerHTML = RANGES.map(r =>
     `<button class="range-btn" data-range="${r.key}" style="flex:1;padding:8px 0;border-radius:10px;border:none;background:${range===r.key?"var(--accent)":"var(--surface)"};color:${range===r.key?"#1A1300":"var(--text-dim)"};font-weight:600;font-size:13px">${r.label}</button>`
@@ -271,13 +281,8 @@ function renderRangeTabs() {
 }
 
 function renderPeriodNav() {
-  let el = document.getElementById("period-nav");
-  if (range === "all") { if (el) el.remove(); return; }
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "period-nav";
-    root.appendChild(el);
-  }
+  const el = document.getElementById("period-nav");
+  if (range === "all") { el.style.display = "none"; el.innerHTML = ""; return; }
   el.style.cssText = "display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:16px;color:var(--text-dim);font-size:13px";
   el.innerHTML = `
     <button id="btn-prev" class="icon-btn">‹</button>
@@ -291,13 +296,8 @@ function renderMainCard() {
   const stats = getStats(filtered);
   const comparison = getComparison(filtered, prevFiltered);
 
-  let el = document.getElementById("main-card");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "main-card";
-    el.style.cssText = "padding:0 20px;margin-bottom:14px";
-    root.appendChild(el);
-  }
+  const el = document.getElementById("main-card");
+  el.style.cssText = "padding:0 20px;margin-bottom:14px";
   el.innerHTML = `
     <div style="background:linear-gradient(155deg, var(--surface-hi), var(--surface));border-radius:20px;padding:22px 20px;border:1px solid var(--line)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -323,13 +323,8 @@ function renderGoalCard() {
   const monthProgress = getMonthProgress();
   const goalPct = goal.amount>0 ? Math.min(100, (monthProgress/goal.amount)*100) : 0;
 
-  let el = document.getElementById("goal-card-section");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "goal-card-section";
-    el.style.cssText = "padding:0 20px;margin-bottom:20px";
-    root.appendChild(el);
-  }
+  const el = document.getElementById("goal-card-section");
+  el.style.cssText = "padding:0 20px;margin-bottom:20px";
   el.innerHTML = `
     <div id="goal-card" class="card" style="padding:14px 16px;cursor:pointer">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -350,13 +345,8 @@ function renderLast7Chart() {
   const last7 = getLast7();
   const maxDay = Math.max(1, ...last7.map(d=>d.net));
 
-  let el = document.getElementById("last7-section");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "last7-section";
-    el.style.cssText = "padding:0 20px;margin-bottom:20px";
-    root.appendChild(el);
-  }
+  const el = document.getElementById("last7-section");
+  el.style.cssText = "padding:0 20px;margin-bottom:20px";
   el.innerHTML = `
     <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;letter-spacing:.04em">ПОСЛЕДНИЕ 7 ДНЕЙ</div>
     <div class="card" style="display:flex;align-items:flex-end;gap:8px;height:90px;padding:12px 12px 8px">
@@ -371,19 +361,10 @@ function renderLast7Chart() {
 function renderWeekdayStats() {
   const filtered = getFiltered();
   const byWeekday = getByWeekday(filtered);
-  if (!byWeekday.withData.some(d=>d.count>0)) {
-    const el = document.getElementById("weekday-section");
-    if (el) el.remove();
-    return;
-  }
+  const el = document.getElementById("weekday-section");
+  if (!byWeekday.withData.some(d=>d.count>0)) { el.style.display = "none"; el.innerHTML = ""; return; }
 
-  let el = document.getElementById("weekday-section");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "weekday-section";
-    el.style.cssText = "padding:0 20px;margin-bottom:20px";
-    root.appendChild(el);
-  }
+  el.style.cssText = "padding:0 20px;margin-bottom:20px";
   el.innerHTML = `
     <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;letter-spacing:.04em">СРЕДНИЙ ДОХОД ПО ДНЯМ НЕДЕЛИ</div>
     <div class="card" style="padding:14px 16px">
@@ -401,19 +382,10 @@ function renderWeekdayStats() {
 function renderEconomics() {
   const filtered = getFiltered();
   const stats = getStats(filtered);
-  if (stats.distance <= 0) {
-    const el = document.getElementById("economics-section");
-    if (el) el.remove();
-    return;
-  }
+  const el = document.getElementById("economics-section");
+  if (stats.distance <= 0) { el.style.display = "none"; el.innerHTML = ""; return; }
 
-  let el = document.getElementById("economics-section");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "economics-section";
-    el.style.cssText = "padding:0 20px;margin-bottom:20px";
-    root.appendChild(el);
-  }
+  el.style.cssText = "padding:0 20px;margin-bottom:20px";
   el.innerHTML = `
     <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;letter-spacing:.04em">ЭКОНОМИКА ПОЕЗДОК</div>
     <div class="card" style="padding:14px 16px;display:flex;gap:16px;flex-wrap:wrap">
@@ -426,14 +398,8 @@ function renderEconomics() {
 
 function renderShiftList() {
   const filtered = getFiltered();
-
-  let el = document.getElementById("list-section");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "list-section";
-    el.style.cssText = "padding:0 20px";
-    root.appendChild(el);
-  }
+  const el = document.getElementById("list-section");
+  el.style.cssText = "padding:0 20px";
 
   if (filtered.length === 0) {
     el.innerHTML = `
@@ -553,7 +519,6 @@ function openForm(initial) {
   const modalRoot = document.getElementById("modal-root");
   const editingId = initial ? initial.id : null;
 
-  // Запоминаем последние значения для автозаполнения
   const lastShift = shifts.length > 0 ? shifts[shifts.length - 1] : null;
   const defaultStart = initial?.start || lastShift?.start || "18:00";
   const defaultEnd = initial?.end || lastShift?.end || "22:00";
@@ -572,13 +537,13 @@ function openForm(initial) {
           <div class="input-hint" id="hint-date"></div>
         </div>
 
-        <div style="display:flex;gap:10px">
-          <div class="field" style="flex:1">
+        <div class="form-row">
+          <div class="field">
             <div class="field-label">Начало</div>
             <input class="input" type="time" id="f-start" value="${defaultStart}">
             <div class="input-hint" id="hint-start"></div>
           </div>
-          <div class="field" style="flex:1">
+          <div class="field">
             <div class="field-label">Конец</div>
             <input class="input" type="time" id="f-end" value="${defaultEnd}">
             <div class="input-hint" id="hint-end"></div>
@@ -591,13 +556,13 @@ function openForm(initial) {
           <div class="input-hint" id="hint-earnings"></div>
         </div>
 
-        <div style="display:flex;gap:10px">
-          <div class="field" style="flex:1">
+        <div class="form-row">
+          <div class="field">
             <div class="field-label">Заказов</div>
             <input class="input" type="number" inputmode="numeric" placeholder="—" id="f-orders" value="${initial?.orders ?? ""}">
             <div class="input-hint" id="hint-orders"></div>
           </div>
-          <div class="field" style="flex:1">
+          <div class="field">
             <div class="field-label">Бензин, ₽</div>
             <input class="input" type="number" inputmode="decimal" placeholder="—" id="f-expenses" value="${initial?.expenses ?? ""}">
             <div class="input-hint" id="hint-expenses"></div>
@@ -623,7 +588,6 @@ function openForm(initial) {
   document.getElementById("form-overlay").addEventListener("click", (e) => { if (e.target.id === "form-overlay") closeModal(); });
   document.getElementById("form-close").onclick = closeModal;
 
-  // Live validation
   const fields = ["date","start","end","earnings","orders","expenses","distance"];
   fields.forEach(f => {
     const el = document.getElementById(`f-${f}`);
@@ -670,32 +634,37 @@ function validateField(name) {
     case "start":
       if (!val) { setError(el, hint, "Укажи время начала"); return false; }
       break;
-    case "end":
+    case "end": {
       if (!val) { setError(el, hint, "Укажи время окончания"); return false; }
       const start = document.getElementById("f-start").value;
       if (start && val === start) { setError(el, hint, "Начало и конец совпадают — смена 0 минут"); return false; }
       break;
-    case "earnings":
+    }
+    case "earnings": {
       if (!val) { setError(el, hint, "Введи сумму заработка"); return false; }
       const earnings = parseFloat(val);
       if (isNaN(earnings) || earnings < 0) { setError(el, hint, "Сумма не может быть отрицательной"); return false; }
       if (earnings > 1000000) { setError(el, hint, "Слишком большая сумма"); return false; }
       break;
-    case "orders":
+    }
+    case "orders": {
       const orders = parseInt(val);
       if (val && (isNaN(orders) || orders < 0)) { setError(el, hint, "Количество заказов не может быть отрицательным"); return false; }
       if (orders > 10000) { setError(el, hint, "Слишком много заказов"); return false; }
       break;
-    case "expenses":
+    }
+    case "expenses": {
       const expenses = parseFloat(val);
       if (val && (isNaN(expenses) || expenses < 0)) { setError(el, hint, "Расходы не могут быть отрицательными"); return false; }
       if (expenses > 500000) { setError(el, hint, "Слишком большая сумма расходов"); return false; }
       break;
-    case "distance":
+    }
+    case "distance": {
       const distance = parseFloat(val);
       if (val && (isNaN(distance) || distance < 0)) { setError(el, hint, "Пробег не может быть отрицательным"); return false; }
       if (distance > 10000) { setError(el, hint, "Слишком большой пробег за смену"); return false; }
       break;
+    }
   }
   return true;
 }
