@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -22,12 +23,24 @@
   .row { display:flex; }
   .card { background: var(--surface); border-radius: 14px; border: 1px solid var(--line); }
   .btn-primary { width:100%; padding:14px 0; border-radius:12px; border:none; background:var(--accent); color:#1A1300; font-weight:700; font-size:15px; margin-top:6px; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
   .field { margin-bottom: 14px; }
   .field-label { font-size:12px; color:var(--text-dim); margin-bottom:6px; }
   .input { width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--text); font-size:14px; }
+  .input.error { border-color: var(--bad); outline-color: var(--bad); }
+  .input-hint { font-size:11px; color:var(--text-faint); margin-top:4px; }
+  .input-hint.error { color: var(--bad); }
   .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:flex-end; justify-content:center; z-index:50; }
   .modal-sheet { background: var(--surface); width:100%; max-width:480px; border-radius:22px 22px 0 0; padding:18px 20px 28px; max-height:88vh; overflow-y:auto; border:1px solid var(--line); border-bottom:none; }
   .icon-btn { background:var(--surface); border:1px solid var(--line); border-radius:8px; width:28px; height:28px; display:flex; align-items:center; justify-content:center; color:var(--text-dim); }
+  .toast { position:fixed; bottom:90px; left:50%; transform:translateX(-50%); background:var(--bad); color:#fff; padding:8px 16px; border-radius:10px; font-size:13px; z-index:100; }
+  .toast.success { background: var(--good); }
+  .confirm-sheet { text-align:center; padding: 24px 20px 20px; }
+  .confirm-sheet p { font-size:14px; color:var(--text-dim); margin: 8px 0 20px; }
+  .confirm-btns { display:flex; gap:10px; }
+  .btn-secondary { flex:1; padding:12px 0; border-radius:10px; border:1px solid var(--line); background:transparent; color:var(--text); font-weight:600; font-size:14px; }
+  .btn-danger { flex:1; padding:12px 0; border-radius:10px; border:none; background:var(--bad); color:#fff; font-weight:600; font-size:14px; }
+  .export-btn { display:block; width:100%; padding:12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--text); font-size:14px; text-align:center; text-decoration:none; margin-bottom:10px; }
 </style>
 </head>
 <body>
@@ -87,7 +100,7 @@ const RANGES = [{key:"week",label:"Неделя"},{key:"month",label:"Месяц
 const WEEKDAYS = ["пн","вт","ср","чт","пт","сб","вс"];
 function weekdayIndexMon0(iso) { const d = new Date(iso); return (d.getDay()+6)%7; }
 
-// ---------------- state ----------------
+// ===================== STATE =====================
 let shifts = [];
 let settings = { amortRate: 5 };
 let goal = { name: "", amount: 0 };
@@ -95,6 +108,7 @@ let range = "week";
 let refDate = new Date();
 let loading = true;
 let errorMsg = "";
+let toastTimeout;
 
 function amortFor(s) { return (s.distance || 0) * (settings.amortRate || 0); }
 function netFor(s) { return s.earnings - (s.expenses || 0) - amortFor(s); }
@@ -162,10 +176,15 @@ function periodLabel() {
   return refDate.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
 }
 
-// ---------------- persistence ----------------
+// ===================== PERSISTENCE =====================
+let saveTimeout;
+function persistShiftsDebounced() {
+  clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(persistShifts, 400);
+}
 async function persistShifts() {
   try { await storage.set("courier_shifts", JSON.stringify(shifts)); }
-  catch { errorMsg = "Не удалось сохранить данные"; render(); setTimeout(()=>{errorMsg="";render();},3000); }
+  catch { showToast("Не удалось сохранить данные"); }
 }
 async function persistSettings() { try { await storage.set("courier_settings", JSON.stringify(settings)); } catch {} }
 async function persistGoal() { try { await storage.set("courier_goal", JSON.stringify(goal)); } catch {} }
@@ -174,33 +193,59 @@ function addOrUpdateShift(shift, editingId) {
   if (editingId) shifts = shifts.map(s => s.id===editingId ? shift : s);
   else shifts = [...shifts, shift];
   shifts.sort((a,b) => (a.date+a.start).localeCompare(b.date+b.start));
-  persistShifts();
+  persistShiftsDebounced();
   if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
-  render();
+  renderAll();
 }
 function deleteShift(id) {
   shifts = shifts.filter(s => s.id !== id);
-  persistShifts();
+  persistShiftsDebounced();
   if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
-  render();
+  renderAll();
 }
 
-// ---------------- rendering ----------------
-function render() {
-  const root = document.getElementById("root");
-  if (loading) { root.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:var(--text-dim)">Загрузка...</div>`; return; }
+// ===================== TOAST =====================
+function showToast(msg, type="error") {
+  errorMsg = msg;
+  const existing = document.querySelector(".toast");
+  if (existing) existing.remove();
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => { el.remove(); errorMsg=""; }, 3000);
+}
 
-  const filtered = getFiltered();
-  const prevFiltered = getPrevFiltered();
-  const stats = getStats(filtered);
-  const comparison = getComparison(filtered, prevFiltered);
-  const byWeekday = getByWeekday(filtered);
-  const last7 = getLast7();
-  const maxDay = Math.max(1, ...last7.map(d=>d.net));
-  const monthProgress = getMonthProgress();
-  const goalPct = goal.amount>0 ? Math.min(100, (monthProgress/goal.amount)*100) : 0;
+// ===================== RENDER: разбитый =====================
+const root = document.getElementById("root");
 
-  root.innerHTML = `
+function renderAll() {
+  if (loading) {
+    root.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:var(--text-dim)">Загрузка...</div>`;
+    return;
+  }
+  renderHeader();
+  renderRangeTabs();
+  renderPeriodNav();
+  renderMainCard();
+  renderGoalCard();
+  renderLast7Chart();
+  renderWeekdayStats();
+  renderEconomics();
+  renderShiftList();
+  renderFAB();
+  attachMainHandlers();
+}
+
+function renderHeader() {
+  let el = document.getElementById("header-section");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "header-section";
+    root.appendChild(el);
+  }
+  el.innerHTML = `
     <div style="padding:22px 20px 16px;display:flex;justify-content:space-between;align-items:flex-start">
       <div>
         <div style="display:flex;align-items:baseline;gap:8px">
@@ -210,128 +255,230 @@ function render() {
         <div style="font-size:24px;font-weight:700;margin-top:4px">Мой заработок</div>
       </div>
       <button id="btn-settings" class="icon-btn" style="width:36px;height:36px;font-size:16px">⚙</button>
-    </div>
+    </div>`;
+}
 
-    <div style="display:flex;gap:6px;padding:0 20px;margin-bottom:14px">
-      ${RANGES.map(r => `<button class="range-btn" data-range="${r.key}" style="flex:1;padding:8px 0;border-radius:10px;border:none;background:${range===r.key?"var(--accent)":"var(--surface)"};color:${range===r.key?"#1A1300":"var(--text-dim)"};font-weight:600;font-size:13px">${r.label}</button>`).join("")}
-    </div>
+function renderRangeTabs() {
+  let el = document.getElementById("range-tabs");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "range-tabs";
+    root.appendChild(el);
+  }
+  el.style.cssText = "display:flex;gap:6px;padding:0 20px;margin-bottom:14px";
+  el.innerHTML = RANGES.map(r =>
+    `<button class="range-btn" data-range="${r.key}" style="flex:1;padding:8px 0;border-radius:10px;border:none;background:${range===r.key?"var(--accent)":"var(--surface)"};color:${range===r.key?"#1A1300":"var(--text-dim)"};font-weight:600;font-size:13px">${r.label}</button>`
+  ).join("");
+}
 
-    ${range!=="all" ? `
-    <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:16px;color:var(--text-dim);font-size:13px">
-      <button id="btn-prev" class="icon-btn">‹</button>
-      <span style="min-width:140px;text-align:center;text-transform:capitalize">${periodLabel()}</span>
-      <button id="btn-next" class="icon-btn">›</button>
-    </div>` : ""}
+function renderPeriodNav() {
+  let el = document.getElementById("period-nav");
+  if (range === "all") { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "period-nav";
+    root.appendChild(el);
+  }
+  el.style.cssText = "display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:16px;color:var(--text-dim);font-size:13px";
+  el.innerHTML = `
+    <button id="btn-prev" class="icon-btn">‹</button>
+    <span style="min-width:140px;text-align:center;text-transform:capitalize">${periodLabel()}</span>
+    <button id="btn-next" class="icon-btn">›</button>`;
+}
 
-    <div style="padding:0 20px;margin-bottom:14px">
-      <div style="background:linear-gradient(155deg, var(--surface-hi), var(--surface));border-radius:20px;padding:22px 20px;border:1px solid var(--line)">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div>
-            <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;letter-spacing:.04em">ЧИСТЫМИ</div>
-            <div class="mono" style="font-size:38px;font-weight:700;color:${stats.net>=0?"var(--text)":"var(--bad)"};letter-spacing:-.02em">${fmtMoney(stats.net)}</div>
-          </div>
-          ${comparison && comparison.pct!==null ? `
-          <div style="display:flex;align-items:center;gap:4px;padding:5px 9px;border-radius:8px;background:${comparison.pct>=0?"rgba(79,190,130,.14)":"rgba(225,97,79,.14)"};color:${comparison.pct>=0?"var(--good)":"var(--bad)"};font-size:12px;font-weight:700;margin-top:4px">
-            ${comparison.pct>=0?"▲":"▼"} ${fmtPct(comparison.pct)}
-          </div>` : ""}
+function renderMainCard() {
+  const filtered = getFiltered();
+  const prevFiltered = getPrevFiltered();
+  const stats = getStats(filtered);
+  const comparison = getComparison(filtered, prevFiltered);
+
+  let el = document.getElementById("main-card");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "main-card";
+    el.style.cssText = "padding:0 20px;margin-bottom:14px";
+    root.appendChild(el);
+  }
+  el.innerHTML = `
+    <div style="background:linear-gradient(155deg, var(--surface-hi), var(--surface));border-radius:20px;padding:22px 20px;border:1px solid var(--line)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;letter-spacing:.04em">ЧИСТЫМИ</div>
+          <div class="mono" style="font-size:38px;font-weight:700;color:${stats.net>=0?"var(--text)":"var(--bad)"};letter-spacing:-.02em">${fmtMoney(stats.net)}</div>
         </div>
-        <div style="display:flex;gap:16px;margin-top:14px;flex-wrap:wrap">
-          ${miniStat("в час", stats.perHour>0?fmtMoney(stats.perHour):"—")}
-          ${miniStat("заказов", stats.orders || "—")}
-          ${miniStat("смен", stats.shiftCount || "—")}
-        </div>
-        ${comparison ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">${range==="week"?"Прошлая неделя":"Прошлый месяц"}: ${fmtMoney(comparison.prev)}</div>` : ""}
+        ${comparison && comparison.pct!==null ? `
+        <div style="display:flex;align-items:center;gap:4px;padding:5px 9px;border-radius:8px;background:${comparison.pct>=0?"rgba(79,190,130,.14)":"rgba(225,97,79,.14)"};color:${comparison.pct>=0?"var(--good)":"var(--bad)"};font-size:12px;font-weight:700;margin-top:4px">
+          ${comparison.pct>=0?"▲":"▼"} ${fmtPct(comparison.pct)}
+        </div>` : ""}
       </div>
-    </div>
-
-    <div style="padding:0 20px;margin-bottom:20px">
-      <div id="goal-card" class="card" style="padding:14px 16px;cursor:pointer">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-size:12px;color:var(--text-dim);letter-spacing:.04em">🎯 ЦЕЛЬ НА МЕСЯЦ${goal.name?`: ${esc(goal.name.toUpperCase())}`:""}</span>
-          <span style="font-size:12px;color:var(--text-faint)">${Math.round(goalPct)}%</span>
-        </div>
-        ${goal.amount>0 ? `
-          <div style="height:8px;border-radius:4px;background:var(--bg);overflow:hidden">
-            <div style="height:100%;width:${goalPct}%;border-radius:4px;background:var(--accent)"></div>
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--text-dim)">
-            <span>${fmtMoney(monthProgress)}</span><span>${fmtMoney(goal.amount)}</span>
-          </div>` : `<div style="font-size:13px;color:var(--text-faint)">Нажми, чтобы поставить цель на месяц</div>`}
+      <div style="display:flex;gap:16px;margin-top:14px;flex-wrap:wrap">
+        ${miniStat("в час", stats.perHour>0?fmtMoney(stats.perHour):"—")}
+        ${miniStat("заказов", stats.orders || "—")}
+        ${miniStat("смен", stats.shiftCount || "—")}
       </div>
-    </div>
+      ${comparison ? `<div style="font-size:11px;color:var(--text-faint);margin-top:10px">${range==="week"?"Прошлая неделя":"Прошлый месяц"}: ${fmtMoney(comparison.prev)}</div>` : ""}
+    </div>`;
+}
 
-    <div style="padding:0 20px;margin-bottom:20px">
-      <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;letter-spacing:.04em">ПОСЛЕДНИЕ 7 ДНЕЙ</div>
-      <div class="card" style="display:flex;align-items:flex-end;gap:8px;height:90px;padding:12px 12px 8px">
-        ${last7.map(d => `
+function renderGoalCard() {
+  const monthProgress = getMonthProgress();
+  const goalPct = goal.amount>0 ? Math.min(100, (monthProgress/goal.amount)*100) : 0;
+
+  let el = document.getElementById("goal-card-section");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "goal-card-section";
+    el.style.cssText = "padding:0 20px;margin-bottom:20px";
+    root.appendChild(el);
+  }
+  el.innerHTML = `
+    <div id="goal-card" class="card" style="padding:14px 16px;cursor:pointer">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:12px;color:var(--text-dim);letter-spacing:.04em">🎯 ЦЕЛЬ НА МЕСЯЦ${goal.name?`: ${esc(goal.name.toUpperCase())}`:""}</span>
+        <span style="font-size:12px;color:var(--text-faint)">${Math.round(goalPct)}%</span>
+      </div>
+      ${goal.amount>0 ? `
+        <div style="height:8px;border-radius:4px;background:var(--bg);overflow:hidden">
+          <div style="height:100%;width:${goalPct}%;border-radius:4px;background:var(--accent)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--text-dim)">
+          <span>${fmtMoney(monthProgress)}</span><span>${fmtMoney(goal.amount)}</span>
+        </div>` : `<div style="font-size:13px;color:var(--text-faint)">Нажми, чтобы поставить цель на месяц</div>`}
+    </div>`;
+}
+
+function renderLast7Chart() {
+  const last7 = getLast7();
+  const maxDay = Math.max(1, ...last7.map(d=>d.net));
+
+  let el = document.getElementById("last7-section");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "last7-section";
+    el.style.cssText = "padding:0 20px;margin-bottom:20px";
+    root.appendChild(el);
+  }
+  el.innerHTML = `
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;letter-spacing:.04em">ПОСЛЕДНИЕ 7 ДНЕЙ</div>
+    <div class="card" style="display:flex;align-items:flex-end;gap:8px;height:90px;padding:12px 12px 8px">
+      ${last7.map(d => `
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end">
+          <div style="width:100%;max-width:26px;border-radius:5px;height:${Math.max(4,(d.net/maxDay)*56)}px;background:${d.net>0?"var(--accent)":"var(--line)"}"></div>
+          <span style="font-size:10px;color:var(--text-faint)">${d.label}</span>
+        </div>`).join("")}
+    </div>`;
+}
+
+function renderWeekdayStats() {
+  const filtered = getFiltered();
+  const byWeekday = getByWeekday(filtered);
+  if (!byWeekday.withData.some(d=>d.count>0)) {
+    const el = document.getElementById("weekday-section");
+    if (el) el.remove();
+    return;
+  }
+
+  let el = document.getElementById("weekday-section");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "weekday-section";
+    el.style.cssText = "padding:0 20px;margin-bottom:20px";
+    root.appendChild(el);
+  }
+  el.innerHTML = `
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;letter-spacing:.04em">СРЕДНИЙ ДОХОД ПО ДНЯМ НЕДЕЛИ</div>
+    <div class="card" style="padding:14px 16px">
+      ${byWeekday.best ? `<div style="font-size:13px;margin-bottom:12px">Выгоднее всего работать в <b style="color:var(--accent)">${byWeekday.best.day}</b> — в среднем ${fmtMoney(byWeekday.best.avg)} за смену</div>` : ""}
+      <div style="display:flex;align-items:flex-end;gap:8px;height:70px">
+        ${byWeekday.withData.map(d => `
           <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end">
-            <div style="width:100%;max-width:26px;border-radius:5px;height:${Math.max(4,(d.net/maxDay)*56)}px;background:${d.net>0?"var(--accent)":"var(--line)"}"></div>
-            <span style="font-size:10px;color:var(--text-faint)">${d.label}</span>
+            <div style="width:100%;max-width:26px;border-radius:5px;height:${d.count>0?Math.max(4,(d.avg/byWeekday.maxAvg)*44):2}px;background:${d.count>0?(byWeekday.best&&d.day===byWeekday.best.day?"var(--accent)":"var(--accent-dim)"):"var(--line)"}"></div>
+            <span style="font-size:10px;color:var(--text-faint)">${d.day}</span>
           </div>`).join("")}
       </div>
-    </div>
+    </div>`;
+}
 
-    ${byWeekday.withData.some(d=>d.count>0) ? `
-    <div style="padding:0 20px;margin-bottom:20px">
-      <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;letter-spacing:.04em">СРЕДНИЙ ДОХОД ПО ДНЯМ НЕДЕЛИ</div>
-      <div class="card" style="padding:14px 16px">
-        ${byWeekday.best ? `<div style="font-size:13px;margin-bottom:12px">Выгоднее всего работать в <b style="color:var(--accent)">${byWeekday.best.day}</b> — в среднем ${fmtMoney(byWeekday.best.avg)} за смену</div>` : ""}
-        <div style="display:flex;align-items:flex-end;gap:8px;height:70px">
-          ${byWeekday.withData.map(d => `
-            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end">
-              <div style="width:100%;max-width:26px;border-radius:5px;height:${d.count>0?Math.max(4,(d.avg/byWeekday.maxAvg)*44):2}px;background:${d.count>0?(byWeekday.best&&d.day===byWeekday.best.day?"var(--accent)":"var(--accent-dim)"):"var(--line)"}"></div>
-              <span style="font-size:10px;color:var(--text-faint)">${d.day}</span>
-            </div>`).join("")}
-        </div>
-      </div>
-    </div>` : ""}
+function renderEconomics() {
+  const filtered = getFiltered();
+  const stats = getStats(filtered);
+  if (stats.distance <= 0) {
+    const el = document.getElementById("economics-section");
+    if (el) el.remove();
+    return;
+  }
 
-    ${stats.distance>0 ? `
-    <div style="padding:0 20px;margin-bottom:20px">
-      <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;letter-spacing:.04em">ЭКОНОМИКА ПОЕЗДОК</div>
-      <div class="card" style="padding:14px 16px;display:flex;gap:16px;flex-wrap:wrap">
-        ${miniStat("пройдено", `${Math.round(stats.distance)} км`)}
-        ${miniStat("км / заказ", stats.kmPerOrder>0?stats.kmPerOrder.toFixed(1):"—")}
-        ${miniStat("бензин / км", stats.perKm>0?`${stats.perKm.toFixed(1)} ₽`:"—")}
-        ${miniStat("износ авто", stats.amort>0?fmtMoney(stats.amort):"—")}
-      </div>
-    </div>` : ""}
+  let el = document.getElementById("economics-section");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "economics-section";
+    el.style.cssText = "padding:0 20px;margin-bottom:20px";
+    root.appendChild(el);
+  }
+  el.innerHTML = `
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;letter-spacing:.04em">ЭКОНОМИКА ПОЕЗДОК</div>
+    <div class="card" style="padding:14px 16px;display:flex;gap:16px;flex-wrap:wrap">
+      ${miniStat("пройдено", `${Math.round(stats.distance)} км`)}
+      ${miniStat("км / заказ", stats.kmPerOrder>0?stats.kmPerOrder.toFixed(1):"—")}
+      ${miniStat("бензин / км", stats.perKm>0?`${stats.perKm.toFixed(1)} ₽`:"—")}
+      ${miniStat("износ авто", stats.amort>0?fmtMoney(stats.amort):"—")}
+    </div>`;
+}
 
-    <div style="padding:0 20px">
+function renderShiftList() {
+  const filtered = getFiltered();
+
+  let el = document.getElementById("list-section");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "list-section";
+    el.style.cssText = "padding:0 20px";
+    root.appendChild(el);
+  }
+
+  if (filtered.length === 0) {
+    el.innerHTML = `
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;letter-spacing:.04em">ЗАПИСИ</div>
-      ${filtered.length===0 ? `
-        <div style="text-align:center;padding:30px 10px;color:var(--text-faint);font-size:14px;background:var(--surface);border-radius:14px;border:1px dashed var(--line)">
-          Пока нет смен за этот период.<br/>Нажми «+», чтобы добавить первую.
-        </div>` : `
-        <div style="display:flex;flex-direction:column;gap:8px">
-          ${[...filtered].reverse().map(s => {
-            const mins = minutesBetween(s.start, s.end);
-            const net = netFor(s);
-            const amort = amortFor(s);
-            return `
-            <div class="shift-row card" data-id="${s.id}" style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer">
-              <div style="flex:1;min-width:0">
-                <div style="font-size:14px;font-weight:600">${fmtDateShort(s.date)}</div>
-                <div style="font-size:12px;color:var(--text-dim);margin-top:2px">
-                  ${s.start}–${s.end} · ${fmtHours(mins)}${s.orders?` · ${s.orders} зак.`:""}${s.distance?` · ${s.distance} км`:""}
-                </div>
-              </div>
-              <div style="text-align:right">
-                <div class="mono" style="font-size:16px;font-weight:700">${fmtMoney(net)}</div>
-                ${(s.expenses>0||amort>0) ? `<div style="font-size:11px;color:var(--bad);margin-top:1px">−${fmtMoney((s.expenses||0)+amort)} ${s.expenses>0&&amort>0?"(бенз.+износ)":amort>0?"износ":"бенз."}</div>` : ""}
-              </div>
-              <button class="delete-btn" data-id="${s.id}" style="background:none;border:none;padding:6px;color:var(--text-faint);font-size:15px;flex-shrink:0">✕</button>
-            </div>`;
-          }).join("")}
-        </div>`}
-    </div>
+      <div style="text-align:center;padding:30px 10px;color:var(--text-faint);font-size:14px;background:var(--surface);border-radius:14px;border:1px dashed var(--line)">
+        Пока нет смен за этот период.<br/>Нажми «+», чтобы добавить первую.
+      </div>`;
+    return;
+  }
 
-    ${errorMsg ? `<div style="position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--bad);color:#fff;padding:8px 16px;border-radius:10px;font-size:13px">${esc(errorMsg)}</div>` : ""}
+  el.innerHTML = `
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;letter-spacing:.04em">ЗАПИСИ</div>
+    <div id="shift-list" style="display:flex;flex-direction:column;gap:8px">
+      ${[...filtered].reverse().map(s => {
+        const mins = minutesBetween(s.start, s.end);
+        const net = netFor(s);
+        const amort = amortFor(s);
+        return `
+        <div class="shift-row card" data-id="${s.id}" style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:600">${fmtDateShort(s.date)}</div>
+            <div style="font-size:12px;color:var(--text-dim);margin-top:2px">
+              ${s.start}–${s.end} · ${fmtHours(mins)}${s.orders?` · ${s.orders} зак.`:""}${s.distance?` · ${s.distance} км`:""}
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div class="mono" style="font-size:16px;font-weight:700">${fmtMoney(net)}</div>
+            ${(s.expenses>0||amort>0) ? `<div style="font-size:11px;color:var(--bad);margin-top:1px">−${fmtMoney((s.expenses||0)+amort)} ${s.expenses>0&&amort>0?"(бенз.+износ)":amort>0?"износ":"бенз."}</div>` : ""}
+          </div>
+          <button class="delete-btn" data-id="${s.id}" style="background:none;border:none;padding:6px;color:var(--text-faint);font-size:15px;flex-shrink:0">✕</button>
+        </div>`;
+      }).join("")}
+    </div>`;
+}
 
-    <button id="btn-fab" style="position:fixed;bottom:24px;right:calc(50% - 190px);width:56px;height:56px;border-radius:28px;background:var(--accent);border:none;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(255,176,32,.35);font-size:26px;color:#1A1300">+</button>
-  `;
-
-  attachMainHandlers();
+function renderFAB() {
+  let el = document.getElementById("fab");
+  if (!el) {
+    el = document.createElement("button");
+    el.id = "fab";
+    el.style.cssText = "position:fixed;bottom:24px;right:calc(50% - 190px);width:56px;height:56px;border-radius:28px;background:var(--accent);border:none;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(255,176,32,.35);font-size:26px;color:#1A1300;z-index:10";
+    el.textContent = "+";
+    document.body.appendChild(el);
+  }
 }
 
 function miniStat(label, value) {
@@ -342,16 +489,24 @@ function miniStat(label, value) {
 }
 
 function attachMainHandlers() {
-  document.getElementById("btn-settings").onclick = openSettings;
+  const settingsBtn = document.getElementById("btn-settings");
+  if (settingsBtn) settingsBtn.onclick = openSettings;
+
   document.querySelectorAll(".range-btn").forEach(btn => {
-    btn.onclick = () => { range = btn.dataset.range; render(); };
+    btn.onclick = () => { range = btn.dataset.range; renderAll(); };
   });
+
   const prevBtn = document.getElementById("btn-prev");
   const nextBtn = document.getElementById("btn-next");
   if (prevBtn) prevBtn.onclick = () => shiftPeriod(-1);
   if (nextBtn) nextBtn.onclick = () => shiftPeriod(1);
-  document.getElementById("goal-card").onclick = openSettings;
-  document.getElementById("btn-fab").onclick = () => openForm(null);
+
+  const goalCard = document.getElementById("goal-card");
+  if (goalCard) goalCard.onclick = openSettings;
+
+  const fab = document.getElementById("fab");
+  if (fab) fab.onclick = () => openForm(null);
+
   document.querySelectorAll(".shift-row").forEach(row => {
     row.addEventListener("click", (e) => {
       if (e.target.closest(".delete-btn")) return;
@@ -359,8 +514,9 @@ function attachMainHandlers() {
       openForm(s);
     });
   });
+
   document.querySelectorAll(".delete-btn").forEach(btn => {
-    btn.addEventListener("click", (e) => { e.stopPropagation(); deleteShift(btn.dataset.id); });
+    btn.addEventListener("click", (e) => { e.stopPropagation(); openDeleteConfirm(btn.dataset.id); });
   });
 }
 
@@ -368,13 +524,41 @@ function shiftPeriod(dir) {
   const d = new Date(refDate);
   if (range === "week") d.setDate(d.getDate()+dir*7); else if (range === "month") d.setMonth(d.getMonth()+dir);
   refDate = d;
-  render();
+  renderAll();
 }
 
-// ---------------- form modal ----------------
+// ===================== DELETE CONFIRM =====================
+function openDeleteConfirm(id) {
+  const modalRoot = document.getElementById("modal-root");
+  const s = shifts.find(x => x.id === id);
+  if (!s) return;
+  modalRoot.innerHTML = `
+    <div class="modal-overlay" id="confirm-overlay">
+      <div class="modal-sheet confirm-sheet">
+        <div style="font-size:17px;font-weight:700">Удалить смену?</div>
+        <p>${fmtDateShort(s.date)}, ${s.start}–${s.end}<br/>${fmtMoney(netFor(s))}</p>
+        <div class="confirm-btns">
+          <button class="btn-secondary" id="confirm-cancel">Отмена</button>
+          <button class="btn-danger" id="confirm-delete">Удалить</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById("confirm-overlay").addEventListener("click", (e) => { if (e.target.id === "confirm-overlay") closeModal(); });
+  document.getElementById("confirm-cancel").onclick = closeModal;
+  document.getElementById("confirm-delete").onclick = () => { deleteShift(id); closeModal(); };
+}
+
+// ===================== FORM WITH VALIDATION =====================
 function openForm(initial) {
   const modalRoot = document.getElementById("modal-root");
   const editingId = initial ? initial.id : null;
+
+  // Запоминаем последние значения для автозаполнения
+  const lastShift = shifts.length > 0 ? shifts[shifts.length - 1] : null;
+  const defaultStart = initial?.start || lastShift?.start || "18:00";
+  const defaultEnd = initial?.end || lastShift?.end || "22:00";
+
   modalRoot.innerHTML = `
     <div class="modal-overlay" id="form-overlay">
       <div class="modal-sheet" id="form-sheet">
@@ -382,39 +566,80 @@ function openForm(initial) {
           <div style="font-size:17px;font-weight:700">${initial ? "Изменить смену" : "Новая смена"}</div>
           <button id="form-close" style="background:none;border:none;font-size:18px;color:var(--text-dim)">✕</button>
         </div>
-        <div class="field"><div class="field-label">Дата</div><input class="input" type="date" id="f-date" value="${initial?.date || todayISO()}"></div>
-        <div style="display:flex;gap:10px">
-          <div class="field" style="flex:1"><div class="field-label">Начало</div><input class="input" type="time" id="f-start" value="${initial?.start || "18:00"}"></div>
-          <div class="field" style="flex:1"><div class="field-label">Конец</div><input class="input" type="time" id="f-end" value="${initial?.end || "22:00"}"></div>
+
+        <div class="field">
+          <div class="field-label">Дата</div>
+          <input class="input" type="date" id="f-date" value="${initial?.date || todayISO()}">
+          <div class="input-hint" id="hint-date"></div>
         </div>
-        <div class="field"><div class="field-label">Заработано, ₽</div><input class="input" type="number" inputmode="decimal" placeholder="напр. 2500" id="f-earnings" value="${initial?.earnings ?? ""}"></div>
+
         <div style="display:flex;gap:10px">
-          <div class="field" style="flex:1"><div class="field-label">Заказов</div><input class="input" type="number" inputmode="numeric" placeholder="—" id="f-orders" value="${initial?.orders ?? ""}"></div>
-          <div class="field" style="flex:1"><div class="field-label">Бензин, ₽</div><input class="input" type="number" inputmode="decimal" placeholder="—" id="f-expenses" value="${initial?.expenses ?? ""}"></div>
+          <div class="field" style="flex:1">
+            <div class="field-label">Начало</div>
+            <input class="input" type="time" id="f-start" value="${defaultStart}">
+            <div class="input-hint" id="hint-start"></div>
+          </div>
+          <div class="field" style="flex:1">
+            <div class="field-label">Конец</div>
+            <input class="input" type="time" id="f-end" value="${defaultEnd}">
+            <div class="input-hint" id="hint-end"></div>
+          </div>
         </div>
+
+        <div class="field">
+          <div class="field-label">Заработано, ₽</div>
+          <input class="input" type="number" inputmode="decimal" placeholder="напр. 2500" id="f-earnings" value="${initial?.earnings ?? ""}">
+          <div class="input-hint" id="hint-earnings"></div>
+        </div>
+
+        <div style="display:flex;gap:10px">
+          <div class="field" style="flex:1">
+            <div class="field-label">Заказов</div>
+            <input class="input" type="number" inputmode="numeric" placeholder="—" id="f-orders" value="${initial?.orders ?? ""}">
+            <div class="input-hint" id="hint-orders"></div>
+          </div>
+          <div class="field" style="flex:1">
+            <div class="field-label">Бензин, ₽</div>
+            <input class="input" type="number" inputmode="decimal" placeholder="—" id="f-expenses" value="${initial?.expenses ?? ""}">
+            <div class="input-hint" id="hint-expenses"></div>
+          </div>
+        </div>
+
         <div class="field">
           <div class="field-label">Пробег за смену, км</div>
           <input class="input" type="number" inputmode="decimal" placeholder="—" id="f-distance" value="${initial?.distance ?? ""}">
-          <div style="font-size:11px;color:var(--text-faint);margin-top:4px">Считаем износ авто отдельно от бензина — ставку меняешь в настройках (⚙)</div>
+          <div class="input-hint" id="hint-distance"></div>
         </div>
+
         <div class="field">
           <div class="field-label">Заметка (не обязательно)</div>
           <textarea class="input" id="f-notes" rows="2" placeholder="напр. дождь, мало заказов...">${initial?.notes ? esc(initial.notes) : ""}</textarea>
         </div>
-        <div id="f-error" style="color:var(--bad);font-size:12px;margin-bottom:10px;display:none">Заполни дату, время и сумму заработка.</div>
+
+        <div id="f-error" style="color:var(--bad);font-size:12px;margin-bottom:10px;display:none"></div>
         <button class="btn-primary" id="f-submit">${initial ? "Сохранить изменения" : "Добавить смену"}</button>
       </div>
     </div>`;
 
   document.getElementById("form-overlay").addEventListener("click", (e) => { if (e.target.id === "form-overlay") closeModal(); });
   document.getElementById("form-close").onclick = closeModal;
+
+  // Live validation
+  const fields = ["date","start","end","earnings","orders","expenses","distance"];
+  fields.forEach(f => {
+    const el = document.getElementById(`f-${f}`);
+    if (el) el.addEventListener("input", () => validateField(f));
+    if (el) el.addEventListener("blur", () => validateField(f));
+  });
+
   document.getElementById("f-submit").onclick = () => {
+    if (!validateAll()) return;
+
     const date = document.getElementById("f-date").value;
     const start = document.getElementById("f-start").value;
     const end = document.getElementById("f-end").value;
     const earnings = parseFloat(document.getElementById("f-earnings").value);
-    const valid = date && start && end && !isNaN(earnings);
-    if (!valid) { document.getElementById("f-error").style.display = "block"; return; }
+
     const shift = {
       id: editingId || uid(), date, start, end, earnings: earnings || 0,
       orders: parseInt(document.getElementById("f-orders").value) || 0,
@@ -427,6 +652,75 @@ function openForm(initial) {
   };
 }
 
+function validateField(name) {
+  const el = document.getElementById(`f-${name}`);
+  const hint = document.getElementById(`hint-${name}`);
+  if (!el || !hint) return true;
+
+  el.classList.remove("error");
+  hint.classList.remove("error");
+  hint.textContent = "";
+
+  const val = el.value.trim();
+
+  switch (name) {
+    case "date":
+      if (!val) { setError(el, hint, "Выбери дату"); return false; }
+      if (val > todayISO()) { setError(el, hint, "Дата не может быть в будущем"); return false; }
+      break;
+    case "start":
+      if (!val) { setError(el, hint, "Укажи время начала"); return false; }
+      break;
+    case "end":
+      if (!val) { setError(el, hint, "Укажи время окончания"); return false; }
+      const start = document.getElementById("f-start").value;
+      if (start && val === start) { setError(el, hint, "Начало и конец совпадают — смена 0 минут"); return false; }
+      break;
+    case "earnings":
+      if (!val) { setError(el, hint, "Введи сумму заработка"); return false; }
+      const earnings = parseFloat(val);
+      if (isNaN(earnings) || earnings < 0) { setError(el, hint, "Сумма не может быть отрицательной"); return false; }
+      if (earnings > 1000000) { setError(el, hint, "Слишком большая сумма"); return false; }
+      break;
+    case "orders":
+      const orders = parseInt(val);
+      if (val && (isNaN(orders) || orders < 0)) { setError(el, hint, "Количество заказов не может быть отрицательным"); return false; }
+      if (orders > 10000) { setError(el, hint, "Слишком много заказов"); return false; }
+      break;
+    case "expenses":
+      const expenses = parseFloat(val);
+      if (val && (isNaN(expenses) || expenses < 0)) { setError(el, hint, "Расходы не могут быть отрицательными"); return false; }
+      if (expenses > 500000) { setError(el, hint, "Слишком большая сумма расходов"); return false; }
+      break;
+    case "distance":
+      const distance = parseFloat(val);
+      if (val && (isNaN(distance) || distance < 0)) { setError(el, hint, "Пробег не может быть отрицательным"); return false; }
+      if (distance > 10000) { setError(el, hint, "Слишком большой пробег за смену"); return false; }
+      break;
+  }
+  return true;
+}
+
+function validateAll() {
+  const results = ["date","start","end","earnings","orders","expenses","distance"].map(f => validateField(f));
+  const allValid = results.every(r => r);
+  const errorEl = document.getElementById("f-error");
+  if (!allValid) {
+    errorEl.style.display = "block";
+    errorEl.textContent = "Исправь ошибки в форме";
+  } else {
+    errorEl.style.display = "none";
+  }
+  return allValid;
+}
+
+function setError(input, hint, msg) {
+  input.classList.add("error");
+  hint.classList.add("error");
+  hint.textContent = msg;
+}
+
+// ===================== SETTINGS =====================
 function openSettings() {
   const modalRoot = document.getElementById("modal-root");
   modalRoot.innerHTML = `
@@ -436,39 +730,92 @@ function openSettings() {
           <div style="font-size:17px;font-weight:700">Настройки</div>
           <button id="settings-close" style="background:none;border:none;font-size:18px;color:var(--text-dim)">✕</button>
         </div>
+
         <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;letter-spacing:.04em">ЦЕЛЬ НА МЕСЯЦ</div>
         <div class="field"><div class="field-label">Название цели (не обязательно)</div><input class="input" type="text" id="s-goal-name" placeholder="напр. на новую резину" value="${goal.name ? esc(goal.name) : ""}"></div>
         <div class="field"><div class="field-label">Сумма, ₽</div><input class="input" type="number" inputmode="decimal" placeholder="напр. 40000" id="s-goal-amount" value="${goal.amount || ""}"></div>
+
         <div style="font-size:12px;color:var(--text-dim);margin:16px 0 10px;letter-spacing:.04em">ИЗНОС АВТО</div>
         <div class="field">
           <div class="field-label">Ставка амортизации, ₽ за км</div>
           <input class="input" type="number" inputmode="decimal" id="s-amort" value="${settings.amortRate ?? 5}">
-          <div style="font-size:11px;color:var(--text-faint);margin-top:4px">Обычно 3–8 ₽/км в зависимости от машины.</div>
+          <div class="input-hint">Обычно 3–8 ₽/км в зависимости от машины.</div>
         </div>
+
+        <div style="font-size:12px;color:var(--text-dim);margin:16px 0 10px;letter-spacing:.04em">ДАННЫЕ</div>
+        <button class="export-btn" id="btn-export">📥 Скачать резервную копию</button>
+        <div class="field">
+          <div class="field-label">Загрузить из файла</div>
+          <input class="input" type="file" id="s-import" accept=".json" style="padding:8px 12px">
+        </div>
+
         <button class="btn-primary" id="s-submit">Сохранить</button>
       </div>
     </div>`;
 
   document.getElementById("settings-overlay").addEventListener("click", (e) => { if (e.target.id === "settings-overlay") closeModal(); });
   document.getElementById("settings-close").onclick = closeModal;
+  document.getElementById("btn-export").onclick = exportData;
+  document.getElementById("s-import").onchange = importData;
   document.getElementById("s-submit").onclick = () => {
-    settings = { amortRate: parseFloat(document.getElementById("s-amort").value) || 0 };
-    goal = { name: document.getElementById("s-goal-name").value.trim(), amount: parseFloat(document.getElementById("s-goal-amount").value) || 0 };
+    const amortVal = parseFloat(document.getElementById("s-amort").value);
+    settings = { amortRate: isNaN(amortVal) || amortVal < 0 ? 0 : amortVal };
+    goal = {
+      name: document.getElementById("s-goal-name").value.trim(),
+      amount: parseFloat(document.getElementById("s-goal-amount").value) || 0
+    };
     persistSettings(); persistGoal();
     closeModal();
-    render();
+    renderAll();
   };
+}
+
+// ===================== EXPORT / IMPORT =====================
+function exportData() {
+  const data = { shifts, settings, goal, exportedAt: new Date().toISOString(), version: 1 };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `courier-backup-${todayISO()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast("Копия сохранена", "success");
+}
+
+function importData(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (!data.shifts || !Array.isArray(data.shifts)) throw new Error("Неверный формат файла");
+      shifts = data.shifts;
+      if (data.settings) settings = data.settings;
+      if (data.goal) goal = data.goal;
+      persistShifts(); persistSettings(); persistGoal();
+      renderAll();
+      showToast("Данные загружены", "success");
+      closeModal();
+    } catch (err) {
+      showToast("Не удалось загрузить файл: " + err.message);
+    }
+  };
+  reader.readAsText(file);
 }
 
 function closeModal() { document.getElementById("modal-root").innerHTML = ""; }
 
-// ---------------- init ----------------
+// ===================== INIT =====================
 (async () => {
   try { const v = await storage.get("courier_shifts"); shifts = v ? JSON.parse(v) : []; } catch { shifts = []; }
   try { const v = await storage.get("courier_settings"); if (v) settings = JSON.parse(v); } catch {}
   try { const v = await storage.get("courier_goal"); if (v) goal = JSON.parse(v); } catch {}
   loading = false;
-  render();
+  renderAll();
 })();
 </script>
 </body>
