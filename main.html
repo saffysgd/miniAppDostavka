@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Мой заработок</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #16181C;
+    --surface: #212429;
+    --surface-hi: #2A2E35;
+    --accent: #FFB020;
+    --accent-dim: #8A6A2A;
+    --good: #4FBE82;
+    --bad: #E1614F;
+    --text: #EDEFF2;
+    --text-dim: #8B909A;
+    --text-faint: #5A5F68;
+    --line: #33373E;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+  #root { max-width: 480px; margin: 0 auto; padding-bottom: 100px; position: relative; min-height: 100vh; }
+  input, select, textarea, button { font-family: inherit; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button { cursor: pointer; }
+  .mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) {
+  tg.ready();
+  tg.expand();
+  try { tg.setHeaderColor("#16181C"); } catch (e) {}
+  try { tg.setBackgroundColor("#16181C"); } catch (e) {}
+}
+
+// ---- storage: Telegram CloudStorage when available, localStorage fallback ----
+const storage = {
+  get(key) {
+    return new Promise((resolve) => {
+      if (tg && tg.CloudStorage) {
+        tg.CloudStorage.getItem(key, (err, value) => resolve(err ? null : value || null));
+      } else {
+        resolve(localStorage.getItem(key));
+      }
+    });
+  },
+  set(key, value) {
+    return new Promise((resolve) => {
+      if (tg && tg.CloudStorage) {
+        tg.CloudStorage.setItem(key, value, () => resolve(true));
+      } else {
+        localStorage.setItem(key, value);
+        resolve(true);
+      }
+    });
+  },
+};
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function pad(n) { return n.toString().padStart(2, "0"); }
+function todayISO() { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function fmtDateShort(iso) {
+  const [y,m,d] = iso.split("-").map(Number);
+  const date = new Date(y, m-1, d);
+  const days = ["вс","пн","вт","ср","чт","пт","сб"];
+  return `${pad(d)}.${pad(m)}, ${days[date.getDay()]}`;
+}
+function minutesBetween(start, end) {
+  const [sh,sm] = start.split(":").map(Number);
+  const [eh,em] = end.split(":").map(Number);
+  let total = eh*60+em - (sh*60+sm);
+  if (total < 0) total += 24*60;
+  return total;
+}
+function fmtHours(mins) { const h = Math.floor(mins/60); const m = mins%60; return m===0 ? `${h} ч` : `${h} ч ${m} мин`; }
+function fmtMoney(n) { return Math.round(n).toLocaleString("ru-RU") + " ₽"; }
+function fmtPct(n) { const sign = n>0 ? "+" : ""; return `${sign}${Math.round(n)}%`; }
+function mondayOf(ref) { const day=(ref.getDay()+6)%7; const monday=new Date(ref); monday.setDate(ref.getDate()-day); monday.setHours(0,0,0,0); return monday; }
+function isInWeek(iso, refDate) {
+  const d = new Date(iso); const monday = mondayOf(refDate);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate()+6); sunday.setHours(23,59,59,999);
+  return d >= monday && d <= sunday;
+}
+function isInMonth(iso, refDate) {
+  const d = new Date(iso);
+  return d.getFullYear()===refDate.getFullYear() && d.getMonth()===refDate.getMonth();
+}
+const RANGES = [{key:"week",label:"Неделя"},{key:"month",label:"Месяц"},{key:"all",label:"Всё время"}];
+const WEEKDAYS = ["пн","вт","ср","чт","пт","сб","вс"];
+function weekdayIndexMon0(iso) { const d = new Date(iso); return (d.getDay()+6)%7; }
+
+function App() {
+  const [shifts, setShifts] = useState(null);
+  const [settings, setSettings] = useState({ amortRate: 5 });
+  const [goal, setGoal] = useState({ name: "", amount: 0 });
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [range, setRange] = useState("week");
+  const [refDate, setRefDate] = useState(new Date());
+  const [editingId, setEditingId] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try { const v = await storage.get("courier_shifts"); setShifts(v ? JSON.parse(v) : []); }
+      catch { setShifts([]); }
+      try { const v = await storage.get("courier_settings"); if (v) setSettings(JSON.parse(v)); } catch {}
+      try { const v = await storage.get("courier_goal"); if (v) setGoal(JSON.parse(v)); } catch {}
+      setLoading(false);
+    })();
+  }, []);
+
+  async function persist(next) {
+    setShifts(next);
+    try { await storage.set("courier_shifts", JSON.stringify(next)); }
+    catch { setError("Не удалось сохранить данные"); setTimeout(()=>setError(""),3000); }
+  }
+  async function persistSettings(next) { setSettings(next); try { await storage.set("courier_settings", JSON.stringify(next)); } catch {} }
+  async function persistGoal(next) { setGoal(next); try { await storage.set("courier_goal", JSON.stringify(next)); } catch {} }
+
+  function amortFor(s) { return (s.distance || 0) * (settings.amortRate || 0); }
+  function netFor(s) { return s.earnings - (s.expenses || 0) - amortFor(s); }
+
+  function addShift(shift) {
+    const next = editingId ? shifts.map(s => s.id===editingId ? shift : s) : [...shifts, shift];
+    next.sort((a,b) => (a.date+a.start).localeCompare(b.date+b.start));
+    persist(next);
+    setShowForm(false); setEditingId(null);
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+  }
+  function deleteShift(id) {
+    persist(shifts.filter(s => s.id !== id));
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+  }
+
+  const filtered = useMemo(() => {
+    if (!shifts) return [];
+    if (range==="all") return shifts;
+    if (range==="week") return shifts.filter(s => isInWeek(s.date, refDate));
+    return shifts.filter(s => isInMonth(s.date, refDate));
+  }, [shifts, range, refDate, settings]);
+
+  const prevFiltered = useMemo(() => {
+    if (!shifts || range==="all") return [];
+    const prevRef = new Date(refDate);
+    if (range==="week") prevRef.setDate(prevRef.getDate()-7); else prevRef.setMonth(prevRef.getMonth()-1);
+    return range==="week" ? shifts.filter(s=>isInWeek(s.date,prevRef)) : shifts.filter(s=>isInMonth(s.date,prevRef));
+  }, [shifts, range, refDate]);
+
+  function sumNet(list) { return list.reduce((a,s) => a + netFor(s), 0); }
+
+  const stats = useMemo(() => {
+    let earnings=0, expenses=0, amort=0, mins=0, orders=0, distance=0;
+    filtered.forEach(s => {
+      earnings += s.earnings; expenses += s.expenses||0; amort += amortFor(s);
+      mins += minutesBetween(s.start, s.end); orders += s.orders||0; distance += s.distance||0;
+    });
+    const net = earnings - expenses - amort;
+    const hours = mins/60;
+    return {
+      earnings, expenses, amort, net, mins, orders, distance,
+      perHour: hours>0 ? net/hours : 0,
+      perOrder: orders>0 ? net/orders : 0,
+      perKm: distance>0 ? expenses/distance : 0,
+      kmPerOrder: orders>0 ? distance/orders : 0,
+      shiftCount: filtered.length,
+    };
+  }, [filtered, settings]);
+
+  const comparison = useMemo(() => {
+    if (range==="all") return null;
+    const curr = sumNet(filtered), prev = sumNet(prevFiltered);
+    if (prev===0) return curr===0 ? null : { pct: null, curr, prev };
+    return { pct: ((curr-prev)/Math.abs(prev))*100, curr, prev };
+  }, [filtered, prevFiltered, settings]);
+
+  const byWeekday = useMemo(() => {
+    const buckets = Array.from({length:7}, () => ({sum:0,count:0}));
+    filtered.forEach(s => { const idx = weekdayIndexMon0(s.date); buckets[idx].sum += netFor(s); buckets[idx].count += 1; });
+    const withData = buckets.map((b,i) => ({ day: WEEKDAYS[i], avg: b.count>0 ? b.sum/b.count : 0, count: b.count }));
+    const maxAvg = Math.max(1, ...withData.map(d=>d.avg));
+    const best = withData.filter(d=>d.count>0).sort((a,b)=>b.avg-a.avg)[0];
+    return { withData, maxAvg, best };
+  }, [filtered, settings]);
+
+  const last7 = useMemo(() => {
+    if (!shifts) return [];
+    const days = [];
+    for (let i=6;i>=0;i--) {
+      const d = new Date(); d.setDate(d.getDate()-i);
+      const iso = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+      const dayShifts = shifts.filter(s=>s.date===iso);
+      const net = dayShifts.reduce((a,s)=>a+netFor(s),0);
+      days.push({ iso, net, label: ["вс","пн","вт","ср","чт","пт","сб"][d.getDay()] });
+    }
+    return days;
+  }, [shifts, settings]);
+
+  const maxDay = Math.max(1, ...last7.map(d=>d.net));
+
+  const monthProgress = useMemo(() => {
+    if (!shifts) return 0;
+    const now = new Date();
+    return sumNet(shifts.filter(s => isInMonth(s.date, now)));
+  }, [shifts, settings]);
+
+  function shiftPeriod(dir) {
+    const d = new Date(refDate);
+    if (range==="week") d.setDate(d.getDate()+dir*7); else if (range==="month") d.setMonth(d.getMonth()+dir);
+    setRefDate(d);
+  }
+  function periodLabel() {
+    if (range==="all") return "За всё время";
+    if (range==="week") {
+      const monday = mondayOf(refDate); const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+      return `${pad(monday.getDate())}.${pad(monday.getMonth()+1)} – ${pad(sunday.getDate())}.${pad(sunday.getMonth()+1)}`;
+    }
+    return refDate.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+  }
+
+  if (loading) {
+    return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-dim)"}}>Загрузка...</div>;
+  }
+
+  const goalPct = goal.amount>0 ? Math.min(100, (monthProgress/goal.amount)*100) : 0;
+
+  return (
+    <div>
+      <div style={{padding:"22px 20px 16px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+        <div>
+          <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+            <span style={{fontSize:13,letterSpacing:"0.08em",color:"var(--accent)",fontWeight:600,textTransform:"uppercase"}}>Смены</span>
+            <span style={{fontSize:13,color:"var(--text-faint)"}}>· Яндекс, авто</span>
+          </div>
+          <div style={{fontSize:24,fontWeight:700,marginTop:4}}>Мой заработок</div>
+        </div>
+        <button onClick={()=>setShowSettings(true)} style={iconBtnBig}>⚙</button>
+      </div>
+
+      <div style={{display:"flex",gap:6,padding:"0 20px",marginBottom:14}}>
+        {RANGES.map(r => (
+          <button key={r.key} onClick={()=>setRange(r.key)} style={{
+            flex:1,padding:"8px 0",borderRadius:10,border:"none",
+            background: range===r.key ? "var(--accent)" : "var(--surface)",
+            color: range===r.key ? "#1A1300" : "var(--text-dim)", fontWeight:600, fontSize:13,
+          }}>{r.label}</button>
+        ))}
+      </div>
+
+      {range!=="all" && (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:16,color:"var(--text-dim)",fontSize:13}}>
+          <button onClick={()=>shiftPeriod(-1)} style={iconBtn}>‹</button>
+          <span style={{minWidth:140,textAlign:"center",textTransform:"capitalize"}}>{periodLabel()}</span>
+          <button onClick={()=>shiftPeriod(1)} style={iconBtn}>›</button>
+        </div>
+      )}
+
+      <div style={{padding:"0 20px",marginBottom:14}}>
+        <div style={{background:"linear-gradient(155deg, var(--surface-hi), var(--surface))",borderRadius:20,padding:"22px 20px",border:"1px solid var(--line)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            <div>
+              <div style={{fontSize:12,color:"var(--text-dim)",marginBottom:6,letterSpacing:"0.04em"}}>ЧИСТЫМИ</div>
+              <div className="mono" style={{fontSize:38,fontWeight:700,color: stats.net>=0 ? "var(--text)" : "var(--bad)",letterSpacing:"-0.02em"}}>{fmtMoney(stats.net)}</div>
+            </div>
+            {comparison && comparison.pct!==null && (
+              <div style={{display:"flex",alignItems:"center",gap:4,padding:"5px 9px",borderRadius:8,
+                background: comparison.pct>=0 ? "rgba(79,190,130,0.14)" : "rgba(225,97,79,0.14)",
+                color: comparison.pct>=0 ? "var(--good)" : "var(--bad)", fontSize:12, fontWeight:700, marginTop:4}}>
+                {comparison.pct>=0 ? "▲" : "▼"} {fmtPct(comparison.pct)}
+              </div>
+            )}
+          </div>
+          <div style={{display:"flex",gap:16,marginTop:14,flexWrap:"wrap"}}>
+            <MiniStat label="в час" value={stats.perHour>0 ? fmtMoney(stats.perHour) : "—"} />
+            <MiniStat label="заказов" value={stats.orders || "—"} />
+            <MiniStat label="смен" value={stats.shiftCount || "—"} />
+          </div>
+          {comparison && <div style={{fontSize:11,color:"var(--text-faint)",marginTop:10}}>{range==="week" ? "Прошлая неделя" : "Прошлый месяц"}: {fmtMoney(comparison.prev)}</div>}
+        </div>
+      </div>
+
+      <div style={{padding:"0 20px",marginBottom:20}}>
+        <div onClick={()=>setShowSettings(true)} style={{background:"var(--surface)",borderRadius:14,padding:"14px 16px",border:"1px solid var(--line)",cursor:"pointer"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontSize:12,color:"var(--text-dim)",letterSpacing:"0.04em"}}>🎯 ЦЕЛЬ НА МЕСЯЦ{goal.name ? `: ${goal.name.toUpperCase()}` : ""}</span>
+            <span style={{fontSize:12,color:"var(--text-faint)"}}>{Math.round(goalPct)}%</span>
+          </div>
+          {goal.amount>0 ? (
+            <React.Fragment>
+              <div style={{height:8,borderRadius:4,background:"var(--bg)",overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${goalPct}%`,borderRadius:4,background:"var(--accent)",transition:"width 0.3s"}}></div>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:12,color:"var(--text-dim)"}}>
+                <span>{fmtMoney(monthProgress)}</span><span>{fmtMoney(goal.amount)}</span>
+              </div>
+            </React.Fragment>
+          ) : <div style={{fontSize:13,color:"var(--text-faint)"}}>Нажми, чтобы поставить цель на месяц</div>}
+        </div>
+      </div>
+
+      <div style={{padding:"0 20px",marginBottom:20}}>
+        <div style={{fontSize:12,color:"var(--text-dim)",marginBottom:10,letterSpacing:"0.04em"}}>ПОСЛЕДНИЕ 7 ДНЕЙ</div>
+        <div style={{display:"flex",alignItems:"flex-end",gap:8,height:90,background:"var(--surface)",borderRadius:14,padding:"12px 12px 8px",border:"1px solid var(--line)"}}>
+          {last7.map(d => (
+            <div key={d.iso} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6,height:"100%",justifyContent:"flex-end"}}>
+              <div style={{width:"100%",maxWidth:26,borderRadius:5,height:`${Math.max(4,(d.net/maxDay)*56)}px`,background: d.net>0 ? "var(--accent)" : "var(--line)"}}></div>
+              <span style={{fontSize:10,color:"var(--text-faint)"}}>{d.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {byWeekday.withData.some(d=>d.count>0) && (
+        <div style={{padding:"0 20px",marginBottom:20}}>
+          <div style={{fontSize:12,color:"var(--text-dim)",marginBottom:10,letterSpacing:"0.04em"}}>СРЕДНИЙ ДОХОД ПО ДНЯМ НЕДЕЛИ</div>
+          <div style={{background:"var(--surface)",borderRadius:14,padding:"14px 16px",border:"1px solid var(--line)"}}>
+            {byWeekday.best && (
+              <div style={{fontSize:13,marginBottom:12}}>
+                Выгоднее всего работать в <b style={{color:"var(--accent)"}}>{byWeekday.best.day}</b> — в среднем {fmtMoney(byWeekday.best.avg)} за смену
+              </div>
+            )}
+            <div style={{display:"flex",alignItems:"flex-end",gap:8,height:70}}>
+              {byWeekday.withData.map(d => (
+                <div key={d.day} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6,height:"100%",justifyContent:"flex-end"}}>
+                  <div style={{width:"100%",maxWidth:26,borderRadius:5,
+                    height: d.count>0 ? `${Math.max(4,(d.avg/byWeekday.maxAvg)*44)}px` : "2px",
+                    background: d.count>0 ? (byWeekday.best && d.day===byWeekday.best.day ? "var(--accent)" : "var(--accent-dim)") : "var(--line)"}}></div>
+                  <span style={{fontSize:10,color:"var(--text-faint)"}}>{d.day}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {stats.distance>0 && (
+        <div style={{padding:"0 20px",marginBottom:20}}>
+          <div style={{fontSize:12,color:"var(--text-dim)",marginBottom:10,letterSpacing:"0.04em"}}>ЭКОНОМИКА ПОЕЗДОК</div>
+          <div style={{background:"var(--surface)",borderRadius:14,padding:"14px 16px",border:"1px solid var(--line)",display:"flex",gap:16,flexWrap:"wrap"}}>
+            <MiniStat label="пройдено" value={`${Math.round(stats.distance)} км`} />
+            <MiniStat label="км / заказ" value={stats.kmPerOrder>0 ? stats.kmPerOrder.toFixed(1) : "—"} />
+            <MiniStat label="бензин / км" value={stats.perKm>0 ? `${stats.perKm.toFixed(1)} ₽` : "—"} />
+            <MiniStat label="износ авто" value={stats.amort>0 ? fmtMoney(stats.amort) : "—"} />
+          </div>
+        </div>
+      )}
+
+      <div style={{padding:"0 20px"}}>
+        <div style={{fontSize:12,color:"var(--text-dim)",marginBottom:10,letterSpacing:"0.04em"}}>ЗАПИСИ</div>
+        {filtered.length===0 && (
+          <div style={{textAlign:"center",padding:"30px 10px",color:"var(--text-faint)",fontSize:14,background:"var(--surface)",borderRadius:14,border:"1px dashed var(--line)"}}>
+            Пока нет смен за этот период.<br/>Нажми «+», чтобы добавить первую.
+          </div>
+        )}
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {[...filtered].reverse().map(s => {
+            const mins = minutesBetween(s.start, s.end);
+            const net = netFor(s);
+            const amort = amortFor(s);
+            return (
+              <div key={s.id} onClick={()=>{setEditingId(s.id);setShowForm(true);}}
+                style={{background:"var(--surface)",borderRadius:14,padding:"14px 16px",border:"1px solid var(--line)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:600}}>{fmtDateShort(s.date)}</div>
+                  <div style={{fontSize:12,color:"var(--text-dim)",marginTop:2}}>
+                    {s.start}–{s.end} · {fmtHours(mins)}{s.orders ? ` · ${s.orders} зак.` : ""}{s.distance ? ` · ${s.distance} км` : ""}
+                  </div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div className="mono" style={{fontSize:16,fontWeight:700}}>{fmtMoney(net)}</div>
+                  {(s.expenses>0 || amort>0) && (
+                    <div style={{fontSize:11,color:"var(--bad)",marginTop:1}}>
+                      −{fmtMoney((s.expenses||0)+amort)} {s.expenses>0 && amort>0 ? "(бенз.+износ)" : amort>0 ? "износ" : "бенз."}
+                    </div>
+                  )}
+                </div>
+                <button onClick={(e)=>{e.stopPropagation();deleteShift(s.id);}} style={{background:"none",border:"none",padding:6,color:"var(--text-faint)",fontSize:15,flexShrink:0}}>✕</button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {error && <div style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",background:"var(--bad)",color:"#fff",padding:"8px 16px",borderRadius:10,fontSize:13}}>{error}</div>}
+
+      <button onClick={()=>{setEditingId(null);setShowForm(true);}} style={{
+        position:"fixed",bottom:24,right:"50%",transform:"translateX(190px)",width:56,height:56,borderRadius:28,
+        background:"var(--accent)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",
+        boxShadow:"0 8px 24px rgba(255,176,32,0.35)",fontSize:26,color:"#1A1300"}}>+</button>
+
+      {showForm && <ShiftForm initial={editingId ? shifts.find(s=>s.id===editingId) : null} onCancel={()=>{setShowForm(false);setEditingId(null);}} onSave={addShift} />}
+      {showSettings && <SettingsModal settings={settings} goal={goal} onCancel={()=>setShowSettings(false)}
+        onSave={(ns,ng)=>{persistSettings(ns);persistGoal(ng);setShowSettings(false);}} />}
+    </div>
+  );
+}
+
+function MiniStat({ label, value }) {
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+      <span style={{fontSize:11,color:"var(--text-dim)"}}>{label}</span>
+      <span className="mono" style={{fontSize:14,fontWeight:600}}>{value}</span>
+    </div>
+  );
+}
+
+const iconBtn = { background:"var(--surface)",border:"1px solid var(--line)",borderRadius:8,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-dim)" };
+const iconBtnBig = { ...iconBtn, width:36, height:36, fontSize:16 };
+
+function ShiftForm({ initial, onCancel, onSave }) {
+  const [date, setDate] = useState(initial?.date || todayISO());
+  const [start, setStart] = useState(initial?.start || "18:00");
+  const [end, setEnd] = useState(initial?.end || "22:00");
+  const [earnings, setEarnings] = useState(initial?.earnings?.toString() || "");
+  const [orders, setOrders] = useState(initial?.orders?.toString() || "");
+  const [expenses, setExpenses] = useState(initial?.expenses?.toString() || "");
+  const [distance, setDistance] = useState(initial?.distance?.toString() || "");
+  const [notes, setNotes] = useState(initial?.notes || "");
+  const [touched, setTouched] = useState(false);
+  const valid = date && start && end && earnings && !isNaN(parseFloat(earnings));
+
+  function submit() {
+    setTouched(true);
+    if (!valid) return;
+    onSave({ id: initial?.id || uid(), date, start, end, earnings: parseFloat(earnings)||0,
+      orders: parseInt(orders)||0, expenses: parseFloat(expenses)||0, distance: parseFloat(distance)||0, notes: notes.trim() });
+  }
+
+  return (
+    <div onClick={onCancel} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:50}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"var(--surface)",width:"100%",maxWidth:480,borderRadius:"22px 22px 0 0",padding:"18px 20px 28px",maxHeight:"88vh",overflowY:"auto",border:"1px solid var(--line)",borderBottom:"none"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+          <div style={{fontSize:17,fontWeight:700}}>{initial ? "Изменить смену" : "Новая смена"}</div>
+          <button onClick={onCancel} style={{background:"none",border:"none",fontSize:18,color:"var(--text-dim)"}}>✕</button>
+        </div>
+        <Field label="Дата"><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inputStyle} /></Field>
+        <div style={{display:"flex",gap:10}}>
+          <Field label="Начало" style={{flex:1}}><input type="time" value={start} onChange={e=>setStart(e.target.value)} style={inputStyle} /></Field>
+          <Field label="Конец" style={{flex:1}}><input type="time" value={end} onChange={e=>setEnd(e.target.value)} style={inputStyle} /></Field>
+        </div>
+        <Field label="Заработано, ₽">
+          <input type="number" inputMode="decimal" placeholder="напр. 2500" value={earnings} onChange={e=>setEarnings(e.target.value)}
+            style={{...inputStyle, borderColor: touched && !earnings ? "var(--bad)" : "var(--line)"}} />
+        </Field>
+        <div style={{display:"flex",gap:10}}>
+          <Field label="Заказов" style={{flex:1}}><input type="number" inputMode="numeric" placeholder="—" value={orders} onChange={e=>setOrders(e.target.value)} style={inputStyle} /></Field>
+          <Field label="Бензин, ₽" style={{flex:1}}><input type="number" inputMode="decimal" placeholder="—" value={expenses} onChange={e=>setExpenses(e.target.value)} style={inputStyle} /></Field>
+        </div>
+        <Field label="Пробег за смену, км">
+          <input type="number" inputMode="decimal" placeholder="—" value={distance} onChange={e=>setDistance(e.target.value)} style={inputStyle} />
+          <div style={{fontSize:11,color:"var(--text-faint)",marginTop:4}}>Считаем износ авто отдельно от бензина — ставку меняешь в настройках (⚙)</div>
+        </Field>
+        <Field label="Заметка (не обязательно)">
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={2} placeholder="напр. дождь, мало заказов..." style={{...inputStyle,resize:"none"}} />
+        </Field>
+        {touched && !valid && <div style={{color:"var(--bad)",fontSize:12,marginBottom:10}}>Заполни дату, время и сумму заработка.</div>}
+        <button onClick={submit} style={submitBtn}>{initial ? "Сохранить изменения" : "Добавить смену"}</button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsModal({ settings, goal, onCancel, onSave }) {
+  const [amortRate, setAmortRate] = useState(settings.amortRate?.toString() || "5");
+  const [goalName, setGoalName] = useState(goal.name || "");
+  const [goalAmount, setGoalAmount] = useState(goal.amount?.toString() || "");
+  function submit() { onSave({amortRate: parseFloat(amortRate)||0}, {name: goalName.trim(), amount: parseFloat(goalAmount)||0}); }
+  return (
+    <div onClick={onCancel} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:50}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"var(--surface)",width:"100%",maxWidth:480,borderRadius:"22px 22px 0 0",padding:"18px 20px 28px",maxHeight:"88vh",overflowY:"auto",border:"1px solid var(--line)",borderBottom:"none"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+          <div style={{fontSize:17,fontWeight:700}}>Настройки</div>
+          <button onClick={onCancel} style={{background:"none",border:"none",fontSize:18,color:"var(--text-dim)"}}>✕</button>
+        </div>
+        <div style={{fontSize:12,color:"var(--text-dim)",marginBottom:10,letterSpacing:"0.04em"}}>ЦЕЛЬ НА МЕСЯЦ</div>
+        <Field label="Название цели (не обязательно)"><input type="text" placeholder="напр. на новую резину" value={goalName} onChange={e=>setGoalName(e.target.value)} style={inputStyle} /></Field>
+        <Field label="Сумма, ₽"><input type="number" inputMode="decimal" placeholder="напр. 40000" value={goalAmount} onChange={e=>setGoalAmount(e.target.value)} style={inputStyle} /></Field>
+        <div style={{fontSize:12,color:"var(--text-dim)",margin:"16px 0 10px",letterSpacing:"0.04em"}}>ИЗНОС АВТО</div>
+        <Field label="Ставка амортизации, ₽ за км">
+          <input type="number" inputMode="decimal" value={amortRate} onChange={e=>setAmortRate(e.target.value)} style={inputStyle} />
+          <div style={{fontSize:11,color:"var(--text-faint)",marginTop:4}}>Обычно 3–8 ₽/км в зависимости от машины.</div>
+        </Field>
+        <button onClick={submit} style={submitBtn}>Сохранить</button>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children, style }) {
+  return <div style={{marginBottom:14, ...style}}><div style={{fontSize:12,color:"var(--text-dim)",marginBottom:6}}>{label}</div>{children}</div>;
+}
+
+const inputStyle = { width:"100%", padding:"11px 12px", borderRadius:10, border:"1px solid var(--line)", background:"var(--bg)", color:"var(--text)", fontSize:14, fontFamily:"inherit" };
+const submitBtn = { width:"100%", padding:"14px 0", borderRadius:12, border:"none", background:"var(--accent)", color:"#1A1300", fontWeight:700, fontSize:15, marginTop:6 };
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
