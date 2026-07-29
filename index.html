@@ -27,9 +27,16 @@
   .field-label { font-size:12px; color:var(--text-dim); margin-bottom:6px; }
   .input { width:100%; min-width: 0; padding:11px 12px; border-radius:10px; border:1.5px solid #3D424B; background:#1B1E23; color:var(--text); font-size:14px; }
   .input.error { border-color: var(--bad); outline-color: var(--bad); }
+  .input-wrap { position: relative; }
+  .input-wrap .fake-display { pointer-events: none; box-sizing: border-box; }
+  .input-wrap .overlay-input {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    opacity: 0; border: none; margin: 0; padding: 0;
+    -webkit-appearance: none; appearance: none; background: transparent;
+  }
   .input-hint { font-size:11px; color:var(--text-faint); margin-top:4px; }
   .input-hint.error { color: var(--bad); }
-  .form-row { display:flex; gap:14px; min-width:0; }
+  .form-row { display:flex; gap:18px; min-width:0; }
   .form-row > .field { flex:1; min-width:0; }
   .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:flex-end; justify-content:center; z-index:50; }
   .modal-sheet { background: var(--surface); width:100%; max-width:480px; border-radius:22px 22px 0 0; padding:18px 20px 28px; max-height:88vh; overflow-y:auto; overflow-x:hidden; border:1px solid var(--line); border-bottom:none; box-sizing:border-box; }
@@ -42,6 +49,14 @@
   .btn-secondary { flex:1; padding:12px 0; border-radius:10px; border:1px solid var(--line); background:transparent; color:var(--text); font-weight:600; font-size:14px; }
   .btn-danger { flex:1; padding:12px 0; border-radius:10px; border:none; background:var(--bad); color:#fff; font-weight:600; font-size:14px; }
   .export-btn { display:block; width:100%; padding:12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--text); font-size:14px; text-align:center; text-decoration:none; margin-bottom:10px; }
+  .shift-row-wrap { position:relative; overflow:hidden; border-radius:14px; }
+  .shift-row-wrap .shift-row { position:relative; z-index:2; touch-action: pan-y; will-change: transform; }
+  .shift-delete-btn {
+    position:absolute; inset:0; left:auto; width:84px; z-index:1;
+    background:var(--bad); border:none; color:#fff; font-size:11px; font-weight:600;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    border-radius:0 14px 14px 0;
+  }
 </style>
 </head>
 <body>
@@ -67,11 +82,81 @@ const storage = {
       else { localStorage.setItem(key, value); resolve(true); }
     });
   },
+  remove(key) {
+    return new Promise((resolve) => {
+      if (tg && tg.CloudStorage) tg.CloudStorage.removeItem(key, () => resolve(true));
+      else { localStorage.removeItem(key); resolve(true); }
+    });
+  },
 };
+
+// ===================== COMPACT STORAGE FORMAT =====================
+// Каждая смена хранится не объектом ({"date":...,"start":...}), а массивом
+// без имён полей — это само по себе экономит ~55%. Поверх этого страницы
+// смен сжимаются gzip'ом (встроенный CompressionStream, без библиотек) —
+// суммарно экономия ~80-85% по сравнению с обычным JSON.
+const HAS_COMPRESSION = typeof CompressionStream !== "undefined";
+const PAGE_SIZE = 100; // смен на одну "страницу"/ключ хранилища
+
+function arrayBufferToBase64(buf) {
+  let binary = "";
+  const bytes = new Uint8Array(buf);
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  return btoa(binary);
+}
+function base64ToArrayBuffer(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+async function gzipCompress(str) {
+  const stream = new Blob([str]).stream().pipeThrough(new CompressionStream("gzip"));
+  const buf = await new Response(stream).arrayBuffer();
+  return arrayBufferToBase64(buf);
+}
+async function gzipDecompress(b64) {
+  const buf = base64ToArrayBuffer(b64);
+  const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return await new Response(stream).text();
+}
+// "1:<base64>" — сжато gzip; "0:<json>" — просто компактный JSON без сжатия (фолбэк для старых браузеров)
+async function encodePayload(str) {
+  if (HAS_COMPRESSION) { try { return "1:" + await gzipCompress(str); } catch { /* fallback below */ } }
+  return "0:" + str;
+}
+async function decodePayload(raw) {
+  const tag = raw.slice(0, 2);
+  const body = raw.slice(2);
+  if (tag === "1:") return await gzipDecompress(body);
+  if (tag === "0:") return body;
+  return raw; // на случай неожиданного формата — вернуть как есть
+}
+
+function encodeDateCompact(iso) { return iso.replace(/-/g, ""); }
+function decodeDateCompact(c) { return `${c.slice(0,4)}-${c.slice(4,6)}-${c.slice(6,8)}`; }
+function encodeTimeCompact(hhmm) { return hhmm.replace(":", ""); }
+function decodeTimeCompact(c) { return `${c.slice(0,2)}:${c.slice(2,4)}`; }
+
+function toCompactShift(s) {
+  return [s.id, encodeDateCompact(s.date), encodeTimeCompact(s.start), encodeTimeCompact(s.end),
+    s.earnings, s.orders||0, s.expenses||0, s.distance||0, s.notes||""];
+}
+function fromCompactShift(a) {
+  return { id:a[0], date:decodeDateCompact(a[1]), start:decodeTimeCompact(a[2]), end:decodeTimeCompact(a[3]),
+    earnings:a[4], orders:a[5], expenses:a[6], distance:a[7], notes:a[8] };
+}
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function pad(n) { return n.toString().padStart(2, "0"); }
 function todayISO() { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+const MONTHS_RU = ["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
+function formatDateHuman(iso) {
+  const [y,m,d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return `${d} ${MONTHS_RU[m-1]} ${y}`;
+}
 function fmtDateShort(iso) {
   const [y,m,d] = iso.split("-").map(Number);
   const date = new Date(y, m-1, d);
@@ -179,13 +264,59 @@ function periodLabel() {
 
 // ===================== PERSISTENCE =====================
 let saveTimeout;
+let lastPageCount = 0;
 function persistShiftsDebounced() {
   clearTimeout(saveTimeout);
   saveTimeout = setTimeout(persistShifts, 400);
 }
 async function persistShifts() {
-  try { await storage.set("courier_shifts", JSON.stringify(shifts)); }
-  catch { showToast("Не удалось сохранить данные"); }
+  try {
+    const compact = shifts.map(toCompactShift);
+    const pages = [];
+    for (let i = 0; i < compact.length; i += PAGE_SIZE) pages.push(compact.slice(i, i + PAGE_SIZE));
+    if (pages.length === 0) pages.push([]); // хотя бы одна (пустая) страница, чтобы явно затереть старые данные
+
+    for (let i = 0; i < pages.length; i++) {
+      const encoded = await encodePayload(JSON.stringify(pages[i]));
+      await storage.set(`courier_shifts_p${i}`, encoded);
+    }
+    // подчистить страницы, оставшиеся от прошлого сохранения (если смен стало меньше)
+    for (let i = pages.length; i < lastPageCount; i++) await storage.remove(`courier_shifts_p${i}`);
+    lastPageCount = pages.length;
+
+    await storage.set("courier_shifts_meta", JSON.stringify({ v: 2, pages: pages.length }));
+  } catch {
+    showToast("Не удалось сохранить данные");
+  }
+}
+async function loadShifts() {
+  try {
+    const metaRaw = await storage.get("courier_shifts_meta");
+    if (metaRaw) {
+      const meta = JSON.parse(metaRaw);
+      let all = [];
+      for (let i = 0; i < meta.pages; i++) {
+        const raw = await storage.get(`courier_shifts_p${i}`);
+        if (!raw) continue;
+        const json = await decodePayload(raw);
+        all = all.concat(JSON.parse(json));
+      }
+      shifts = all.map(fromCompactShift);
+      lastPageCount = meta.pages;
+      return;
+    }
+    // миграция со старого формата (один ключ, обычный JSON-массив объектов)
+    const legacy = await storage.get("courier_shifts");
+    if (legacy) {
+      shifts = JSON.parse(legacy);
+      await persistShifts();       // пересохранить в новом компактном формате
+      await storage.remove("courier_shifts");
+      return;
+    }
+    shifts = [];
+  } catch {
+    shifts = [];
+  }
 }
 async function persistSettings() { try { await storage.set("courier_settings", JSON.stringify(settings)); } catch {} }
 async function persistGoal() { try { await storage.set("courier_goal", JSON.stringify(goal)); } catch {} }
@@ -418,21 +549,24 @@ function renderShiftList() {
         const net = netFor(s);
         const amort = amortFor(s);
         return `
-        <div class="shift-row card" data-id="${s.id}" style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer">
-          <div style="flex:1;min-width:0">
-            <div style="font-size:14px;font-weight:600">${fmtDateShort(s.date)}</div>
-            <div style="font-size:12px;color:var(--text-dim);margin-top:2px">
-              ${s.start}–${s.end} · ${fmtHours(mins)}${s.orders?` · ${s.orders} зак.`:""}${s.distance?` · ${s.distance} км`:""}
+        <div class="shift-row-wrap" data-id="${s.id}">
+          <button class="shift-delete-btn" data-id="${s.id}">🗑<br/>Удалить</button>
+          <div class="shift-row card" data-id="${s.id}" style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14px;font-weight:600">${fmtDateShort(s.date)}</div>
+              <div style="font-size:12px;color:var(--text-dim);margin-top:2px">
+                ${s.start}–${s.end} · ${fmtHours(mins)}${s.orders?` · ${s.orders} зак.`:""}${s.distance?` · ${s.distance} км`:""}
+              </div>
+            </div>
+            <div style="text-align:right">
+              <div class="mono" style="font-size:16px;font-weight:700">${fmtMoney(net)}</div>
+              ${(s.expenses>0||amort>0) ? `<div style="font-size:11px;color:var(--bad);margin-top:1px">−${fmtMoney((s.expenses||0)+amort)} ${s.expenses>0&&amort>0?"(бенз.+износ)":amort>0?"износ":"бенз."}</div>` : ""}
             </div>
           </div>
-          <div style="text-align:right">
-            <div class="mono" style="font-size:16px;font-weight:700">${fmtMoney(net)}</div>
-            ${(s.expenses>0||amort>0) ? `<div style="font-size:11px;color:var(--bad);margin-top:1px">−${fmtMoney((s.expenses||0)+amort)} ${s.expenses>0&&amort>0?"(бенз.+износ)":amort>0?"износ":"бенз."}</div>` : ""}
-          </div>
-          <button class="delete-btn" data-id="${s.id}" style="background:none;border:none;padding:6px;color:var(--text-faint);font-size:15px;flex-shrink:0">✕</button>
         </div>`;
       }).join("")}
-    </div>`;
+    </div>
+    ${filtered.length > 0 ? `<div style="text-align:center;font-size:11px;color:var(--text-faint);margin-top:10px">← Свайпни запись влево, чтобы удалить</div>` : ""}`;
 }
 
 function renderFAB() {
@@ -474,15 +608,82 @@ function attachMainHandlers() {
 
   document.querySelectorAll(".shift-row").forEach(row => {
     row.addEventListener("click", (e) => {
-      if (e.target.closest(".delete-btn")) return;
+      const wrap = row.closest(".shift-row-wrap");
+      if (wrap.classList.contains("open")) { closeSwipe(wrap); return; }
       const s = shifts.find(x => x.id === row.dataset.id);
       openForm(s);
     });
   });
 
-  document.querySelectorAll(".delete-btn").forEach(btn => {
-    btn.addEventListener("click", (e) => { e.stopPropagation(); openDeleteConfirm(btn.dataset.id); });
+  document.querySelectorAll(".shift-delete-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openDeleteConfirm(btn.dataset.id);
+    });
   });
+
+  attachSwipeHandlers();
+}
+
+const SWIPE_OPEN_X = -84;
+
+function closeSwipe(wrap) {
+  const row = wrap.querySelector(".shift-row");
+  row.style.transition = "transform 0.2s ease";
+  row.style.transform = "translateX(0)";
+  wrap.classList.remove("open");
+}
+
+function closeAllSwipes(except) {
+  document.querySelectorAll(".shift-row-wrap.open").forEach(w => { if (w !== except) closeSwipe(w); });
+}
+
+function attachSwipeHandlers() {
+  document.querySelectorAll(".shift-row-wrap").forEach(wrap => {
+    const row = wrap.querySelector(".shift-row");
+    let startX = 0, startY = 0, baseX = 0, currentX = 0, dragging = false, isHorizontal = null;
+
+    row.addEventListener("touchstart", (e) => {
+      closeAllSwipes(wrap);
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      baseX = wrap.classList.contains("open") ? SWIPE_OPEN_X : 0;
+      dragging = true;
+      isHorizontal = null;
+      row.style.transition = "none";
+    }, { passive: true });
+
+    row.addEventListener("touchmove", (e) => {
+      if (!dragging) return;
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+      if (isHorizontal === null) isHorizontal = Math.abs(dx) > Math.abs(dy) + 4;
+      if (!isHorizontal) return;
+      e.preventDefault();
+      currentX = Math.max(SWIPE_OPEN_X, Math.min(0, baseX + dx));
+      row.style.transform = `translateX(${currentX}px)`;
+    }, { passive: false });
+
+    row.addEventListener("touchend", () => {
+      if (!dragging) return;
+      dragging = false;
+      row.style.transition = "transform 0.2s ease";
+      if (isHorizontal && currentX < SWIPE_OPEN_X / 2) {
+        row.style.transform = `translateX(${SWIPE_OPEN_X}px)`;
+        wrap.classList.add("open");
+      } else {
+        row.style.transform = "translateX(0)";
+        wrap.classList.remove("open");
+      }
+      currentX = 0;
+    });
+  });
+
+  document.addEventListener("touchstart", closeSwipesOutside, { passive: true });
+}
+
+function closeSwipesOutside(e) {
+  if (!e.target.closest(".shift-row-wrap")) closeAllSwipes();
 }
 
 function shiftPeriod(dir) {
@@ -533,19 +734,28 @@ function openForm(initial) {
 
         <div class="field">
           <div class="field-label">Дата</div>
-          <input class="input" type="date" id="f-date" value="${initial?.date || todayISO()}">
+          <div class="input-wrap">
+            <div class="input fake-display" id="f-date-display">${formatDateHuman(initial?.date || todayISO())}</div>
+            <input type="date" id="f-date" class="overlay-input" value="${initial?.date || todayISO()}">
+          </div>
           <div class="input-hint" id="hint-date"></div>
         </div>
 
         <div class="form-row">
           <div class="field">
             <div class="field-label">Начало</div>
-            <input class="input" type="time" id="f-start" value="${defaultStart}">
+            <div class="input-wrap">
+              <div class="input fake-display" id="f-start-display">${defaultStart}</div>
+              <input type="time" id="f-start" class="overlay-input" value="${defaultStart}">
+            </div>
             <div class="input-hint" id="hint-start"></div>
           </div>
           <div class="field">
             <div class="field-label">Конец</div>
-            <input class="input" type="time" id="f-end" value="${defaultEnd}">
+            <div class="input-wrap">
+              <div class="input fake-display" id="f-end-display">${defaultEnd}</div>
+              <input type="time" id="f-end" class="overlay-input" value="${defaultEnd}">
+            </div>
             <div class="input-hint" id="hint-end"></div>
           </div>
         </div>
@@ -595,6 +805,20 @@ function openForm(initial) {
     if (el) el.addEventListener("blur", () => validateField(f));
   });
 
+  // Синхронизация видимого блока с реальным (скрытым) input'ом даты/времени
+  const dateInput = document.getElementById("f-date");
+  const dateDisplay = document.getElementById("f-date-display");
+  dateInput.addEventListener("change", () => { dateDisplay.textContent = formatDateHuman(dateInput.value); });
+  dateInput.addEventListener("input", () => { dateDisplay.textContent = formatDateHuman(dateInput.value); });
+
+  ["start","end"].forEach(f => {
+    const input = document.getElementById(`f-${f}`);
+    const display = document.getElementById(`f-${f}-display`);
+    const sync = () => { display.textContent = input.value || "—"; };
+    input.addEventListener("change", sync);
+    input.addEventListener("input", sync);
+  });
+
   document.getElementById("f-submit").onclick = () => {
     if (!validateAll()) return;
 
@@ -619,8 +843,9 @@ function validateField(name) {
   const el = document.getElementById(`f-${name}`);
   const hint = document.getElementById(`hint-${name}`);
   if (!el || !hint) return true;
+  const visualEl = document.getElementById(`f-${name}-display`) || el;
 
-  el.classList.remove("error");
+  visualEl.classList.remove("error");
   hint.classList.remove("error");
   hint.textContent = "";
 
@@ -628,16 +853,16 @@ function validateField(name) {
 
   switch (name) {
     case "date":
-      if (!val) { setError(el, hint, "Выбери дату"); return false; }
-      if (val > todayISO()) { setError(el, hint, "Дата не может быть в будущем"); return false; }
+      if (!val) { setError(visualEl, hint, "Выбери дату"); return false; }
+      if (val > todayISO()) { setError(visualEl, hint, "Дата не может быть в будущем"); return false; }
       break;
     case "start":
-      if (!val) { setError(el, hint, "Укажи время начала"); return false; }
+      if (!val) { setError(visualEl, hint, "Укажи время начала"); return false; }
       break;
     case "end": {
-      if (!val) { setError(el, hint, "Укажи время окончания"); return false; }
+      if (!val) { setError(visualEl, hint, "Укажи время окончания"); return false; }
       const start = document.getElementById("f-start").value;
-      if (start && val === start) { setError(el, hint, "Начало и конец совпадают — смена 0 минут"); return false; }
+      if (start && val === start) { setError(visualEl, hint, "Начало и конец совпадают — смена 0 минут"); return false; }
       break;
     }
     case "earnings": {
@@ -779,7 +1004,7 @@ function closeModal() { document.getElementById("modal-root").innerHTML = ""; }
 
 // ===================== INIT =====================
 (async () => {
-  try { const v = await storage.get("courier_shifts"); shifts = v ? JSON.parse(v) : []; } catch { shifts = []; }
+  await loadShifts();
   try { const v = await storage.get("courier_settings"); if (v) settings = JSON.parse(v); } catch {}
   try { const v = await storage.get("courier_goal"); if (v) goal = JSON.parse(v); } catch {}
   loading = false;
