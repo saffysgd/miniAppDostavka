@@ -593,6 +593,7 @@
   let scanState = 'idle'; // idle | scanning | loading | result
   let scannedResult = null;
   let codeReader = null;
+  let awaitingResult = false;
 
   let libraryQuery = '';
   let openProductRowId = null;
@@ -851,31 +852,41 @@
   });
 
   // ---------- Scan panel ----------
-  function renderScanPanel(){
+  function buildScanPanelDOM(){
     const el = document.getElementById('scanPanel');
-    if (scanState === 'idle') {
-      el.innerHTML = `
-        <div class="scan-start">
-          <span class="big">📷</span>
-          <div>Наведите камеру на штрихкод продукта</div>
-          <button class="btn btn-primary btn-block" data-action="start">Включить камеру</button>
-          <div class="scan-hint">Работает в мобильном приложении Telegram. Данные о продукте берутся из Open Food Facts.</div>
-        </div>`;
-    } else if (scanState === 'unavailable') {
-      el.innerHTML = `<div class="not-found-box">Сканер недоступен в этом клиенте Telegram.<br>Добавьте продукт вручную.</div>`;
-    } else if (scanState === 'scanning') {
-      el.innerHTML = `
+    el.innerHTML = `
+      <div id="scanIdleBox" class="scan-start">
+        <span class="big">📷</span>
+        <div>Наведите камеру на штрихкод продукта</div>
+        <button class="btn btn-primary btn-block" data-action="start">Включить камеру</button>
+        <div class="scan-hint">Работает в мобильном приложении Telegram. Данные о продукте берутся из Open Food Facts.</div>
+      </div>
+      <div id="scanUnavailableBox" class="not-found-box" style="display:none;">Сканер недоступен в этом клиенте Telegram.<br>Добавьте продукт вручную.</div>
+      <div id="scanVideoBox" style="display:none;">
         <div class="scan-video-wrap">
           <video id="scanVideo" autoplay playsinline muted></video>
           <div class="scan-frame"></div>
         </div>
-        <button class="btn btn-secondary btn-block" data-action="stop">Остановить сканирование</button>`;
-      startZxing();
-    } else if (scanState === 'loading') {
-      el.innerHTML = `<div class="scan-loading">Ищем продукт по штрихкоду…</div>`;
+        <button class="btn btn-secondary btn-block" data-action="stop">Остановить сканирование</button>
+      </div>
+      <div id="scanLoadingBox" class="scan-loading" style="display:none;">Ищем продукт по штрихкоду…</div>
+      <div id="scanResultBox" style="display:none;"></div>
+    `;
+  }
+
+  function renderScanPanel(){
+    document.getElementById('scanIdleBox').style.display = scanState === 'idle' ? 'block' : 'none';
+    document.getElementById('scanUnavailableBox').style.display = scanState === 'unavailable' ? 'block' : 'none';
+    document.getElementById('scanVideoBox').style.display = scanState === 'scanning' ? 'block' : 'none';
+    document.getElementById('scanLoadingBox').style.display = scanState === 'loading' ? 'block' : 'none';
+    const resultBox = document.getElementById('scanResultBox');
+    resultBox.style.display = scanState === 'result' ? 'block' : 'none';
+
+    if (scanState === 'scanning') {
+      ensureCameraStarted();
     } else if (scanState === 'result' && scannedResult) {
       if (scannedResult.found) {
-        el.innerHTML = `
+        resultBox.innerHTML = `
           <div class="scan-result-card">
             <div class="field"><label>Название</label><input type="text" id="srName" value="${escapeHtml(scannedResult.name)}"></div>
             <div class="scan-result-barcode">Штрихкод: ${scannedResult.barcode}</div>
@@ -905,7 +916,7 @@
         ['srWeight','srCal','srProtein','srFat','srCarb'].forEach(id => document.getElementById(id).addEventListener('input', updateTotal));
         updateTotal();
       } else {
-        el.innerHTML = `
+        resultBox.innerHTML = `
           <div class="not-found-box">
             Товар со штрихкодом ${scannedResult.barcode} не найден в базе Open Food Facts.
           </div>
@@ -921,7 +932,7 @@
     const action = btn.getAttribute('data-action');
     if (action === 'start') { scanState='scanning'; renderScanPanel(); }
     else if (action === 'stop') { stopScan(); scanState='idle'; renderScanPanel(); }
-    else if (action === 'rescan') { scannedResult=null; scanState='scanning'; renderScanPanel(); }
+    else if (action === 'rescan') { awaitingResult=false; scannedResult=null; scanState='scanning'; renderScanPanel(); }
     else if (action === 'createFromBarcode') {
       productFormPrefillBarcode = scannedResult ? scannedResult.barcode : '';
       openProductForm();
@@ -945,24 +956,27 @@
     }
   });
 
-  function startZxing(){
+  // Starts the camera only if it isn't already running — reused across rescans so the
+  // browser only asks for camera permission once per scanning session, not per barcode.
+  function ensureCameraStarted(){
+    if (codeReader) return; // stream already live, just keep decoding
     if (!window.ZXing) { scanState='unavailable'; renderScanPanel(); return; }
     try {
       codeReader = new ZXing.BrowserMultiFormatReader();
       codeReader.decodeFromVideoDevice(null, 'scanVideo', (result, err) => {
-        if (result) {
-          const barcode = result.getText();
-          stopScan();
-          handleBarcode(barcode);
+        if (result && !awaitingResult) {
+          awaitingResult = true;
+          handleBarcode(result.getText());
         }
-      }).catch(() => { scanState='unavailable'; renderScanPanel(); });
+      }).catch(() => { codeReader = null; scanState='unavailable'; renderScanPanel(); });
     } catch(e) {
-      scanState='unavailable'; renderScanPanel();
+      codeReader = null; scanState='unavailable'; renderScanPanel();
     }
   }
 
   function stopScan(){
     if (codeReader) { try { codeReader.reset(); } catch(e){} codeReader = null; }
+    awaitingResult = false;
   }
 
   async function handleBarcode(barcode){
@@ -1288,6 +1302,7 @@
     await loadGoals();
     await loadProducts();
     await loadDay();
+    buildScanPanelDOM();
     renderScanPanel();
   })();
 })();
