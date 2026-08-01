@@ -6,6 +6,7 @@
 <title>Дневник КБЖУ</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="weight.js"></script>
 <style>
   :root{
     --bg: var(--tg-theme-bg-color, #F5F3ED);
@@ -243,6 +244,7 @@
 <div class="topbar">
   <h1>Дневник КБЖУ</h1>
   <div class="date-nav">
+    <button id="openWeight" title="Вес">⚖️</button>
     <button id="prevDay">‹</button>
     <span class="date-label" id="dateLabel">Сегодня</span>
     <button id="nextDay">›</button>
@@ -1296,6 +1298,12 @@
       haptic('notification','success');
     });
   });
+
+  // ---------- Weight tracker (weight.js) ----------
+  if (window.WeightTracker) {
+    window.WeightTracker.init({ storage, haptic, escapeHtml, round1 });
+    document.getElementById('openWeight').addEventListener('click', () => window.WeightTracker.open());
+  }
 
   // ---------- Init ----------
   (async () => {
