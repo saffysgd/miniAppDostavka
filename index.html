@@ -557,18 +557,24 @@
     get(key){
       return new Promise((resolve) => {
         if (tg && tg.CloudStorage) {
-          tg.CloudStorage.getItem(key, (err, value) => resolve(err ? null : value));
+          tg.CloudStorage.getItem(key, (err, value) => {
+            if (err) { console.error('CloudStorage.getItem error for key', key, err); resolve(memStore[key] ?? null); }
+            else resolve(value || memStore[key] || null);
+          });
         } else {
           resolve(memStore[key] ?? null);
         }
       });
     },
     set(key, value){
+      memStore[key] = value; // same-session fallback in case the cloud write fails
       return new Promise((resolve) => {
         if (tg && tg.CloudStorage) {
-          tg.CloudStorage.setItem(key, value, () => resolve());
+          tg.CloudStorage.setItem(key, value, (err, success) => {
+            if (err || success === false) console.error('CloudStorage.setItem failed for key', key, err);
+            resolve();
+          });
         } else {
-          memStore[key] = value;
           resolve();
         }
       });
@@ -612,7 +618,7 @@
     const y = d.getFullYear();
     const m = String(d.getMonth()+1).padStart(2,'0');
     const day = String(d.getDate()).padStart(2,'0');
-    return `diary:${y}-${m}-${day}`;
+    return `diary-${y}-${m}-${day}`;
   }
 
   function formatDateLabel(d){
