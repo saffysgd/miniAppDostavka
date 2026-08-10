@@ -1,1325 +1,1319 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Дневник КБЖУ</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1C1613" />
+<title>УГОЛЬКИ — мини-апп</title>
+
+<!-- Platform bridges: harmless outside Telegram/MAX, required inside them -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
-<script src="weight.js"></script>
+<script src="https://st.max.ru/js/max-web-app.js"></script>
+
+<!-- In-browser JSX transform so this can run with zero build step on GitHub Pages -->
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+
 <style>
-  :root{
-    --bg: var(--tg-theme-bg-color, #F5F3ED);
-    --secondary-bg: var(--tg-theme-secondary-bg-color, #EFEBE1);
-    --text: var(--tg-theme-text-color, #2B2A26);
-    --hint: var(--tg-theme-hint-color, #948C7C);
-    --link: var(--tg-theme-link-color, #6B4E71);
-    --button: var(--tg-theme-button-color, #6B4E71);
-    --button-text: var(--tg-theme-button-text-color, #ffffff);
-    --card: #FFFFFF;
-    --card-text: #2B2A26;
-    --border: rgba(43,42,38,0.08);
-
-    --c-protein: #C97064;
-    --c-fat: #D9A441;
-    --c-carb: #8A9B6E;
-    --c-cal: #6B4E71;
-
-    --radius: 16px;
-  }
-
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-
-  body{
-    margin:0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    padding-bottom: 90px;
-    min-height: 100vh;
-  }
-
-  .topbar{
-    display:flex; align-items:center; justify-content:space-between;
-    padding: 14px 16px 8px;
-  }
-  .topbar h1{
-    font-size: 17px; font-weight: 700; margin:0; letter-spacing: -0.01em;
-  }
-  .date-nav{
-    display:flex; align-items:center; gap: 10px;
-  }
-  .date-nav button{
-    border:none; background:var(--secondary-bg); color:var(--text);
-    width:30px; height:30px; border-radius:50%; font-size:16px; line-height:1;
-    display:flex; align-items:center; justify-content:center;
-  }
-  .date-label{
-    font-size: 13px; color: var(--hint); min-width: 92px; text-align:center;
-  }
-
-  .summary{
-    margin: 6px 16px 18px;
-    background: var(--card);
-    border-radius: var(--radius);
-    padding: 18px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-  }
-  .summary-top{
-    display:flex; align-items:center; gap:18px;
-  }
-  .ring-wrap{ position:relative; width:104px; height:104px; flex-shrink:0; }
-  .ring-wrap svg{ transform: rotate(-90deg); }
-  .ring-center{
-    position:absolute; inset:0; display:flex; flex-direction:column;
-    align-items:center; justify-content:center;
-  }
-  .ring-center .num{ font-size:20px; font-weight:800; letter-spacing:-0.02em; color: var(--card-text); }
-  .ring-center .label{ font-size:10px; color:var(--hint); margin-top:1px; }
-
-  .macro-list{ flex:1; display:flex; flex-direction:column; gap:10px; }
-  .macro-row{ display:flex; align-items:center; gap:8px; }
-  .macro-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-  .macro-name{ font-size:12px; color:var(--hint); width:44px; flex-shrink:0; }
-  .macro-bar-track{ flex:1; height:6px; border-radius:3px; background:var(--secondary-bg); overflow:hidden; }
-  .macro-bar-fill{ height:100%; border-radius:3px; }
-  .macro-val{ font-size:11px; color:var(--card-text); width:64px; text-align:right; flex-shrink:0; }
-
-  .goals-link{
-    margin-top:14px; text-align:center; font-size:12px; color:var(--link);
-    padding-top:12px; border-top:1px solid var(--border);
-  }
-
-  .meal-section{ margin: 0 16px 18px; }
-  .meal-header{
-    display:flex; align-items:center; justify-content:space-between;
-    padding: 4px 4px 8px;
-  }
-  .meal-title{ display:flex; align-items:center; gap:6px; font-size:14px; font-weight:700; }
-  .meal-cal{ font-size:12px; color:var(--hint); }
-
-  .entry{
-    background: var(--card);
-    border-radius: 14px;
-    padding: 12px 14px;
-    display:flex; align-items:center; justify-content:space-between;
-    margin-bottom: 8px;
-  }
-  .entry-info{ flex:1; min-width:0; }
-  .entry-name{ font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color: var(--card-text); }
-  .entry-macros{ font-size:11px; color:var(--hint); margin-top:2px; }
-  .entry-cal{ font-size:14px; font-weight:700; margin-left:10px; flex-shrink:0; color: var(--card-text); }
-  .entry-del{
-    border:none; background:transparent; color: var(--hint);
-    font-size:18px; margin-left:8px; padding:2px 6px; flex-shrink:0;
-  }
-
-  .empty-state{
-    text-align:center; color: var(--hint); font-size:13px;
-    padding: 30px 16px; line-height:1.5;
-  }
-  .empty-state .big{ font-size:32px; display:block; margin-bottom:8px; }
-
-  .fab{
-    position:fixed; right:16px; bottom:20px;
-    width:56px; height:56px; border-radius:50%;
-    background: var(--button); color: var(--button-text);
-    border:none; font-size:28px; font-weight:400;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.18);
-    display:flex; align-items:center; justify-content:center;
-    z-index: 20;
-  }
-
-  .sheet-overlay{
-    position:fixed; inset:0; background: rgba(0,0,0,0.35);
-    display:none; align-items:flex-end; z-index: 50;
-  }
-  .sheet-overlay.open{ display:flex; }
-  .sheet{
-    background: var(--bg); width:100%; border-radius: 20px 20px 0 0;
-    padding: 10px 18px 18px; max-height: 90vh; overflow-y:auto;
-  }
-  .sheet-handle{ width:36px; height:4px; border-radius:2px; background:var(--border); margin: 6px auto 14px; }
-  .sheet-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
-  .sheet-head h2{ font-size:16px; margin:0; }
-  .sheet-close{
-    border:none; background: var(--secondary-bg); color:var(--text);
-    width:28px; height:28px; border-radius:50%; font-size:14px;
-    display:flex; align-items:center; justify-content:center; flex-shrink:0;
-  }
-
-  .meal-picker{ display:flex; gap:8px; margin-bottom:14px; }
-  .meal-chip{
-    flex:1; text-align:center; padding:9px 4px; border-radius:12px;
-    background: var(--secondary-bg); font-size:12px; border: 1.5px solid transparent;
-  }
-  .meal-chip.active{ border-color: var(--button); color: var(--button); font-weight:700; }
-
-  .mode-tabs{ display:flex; gap:6px; margin-bottom:16px; background: var(--secondary-bg); padding:4px; border-radius:12px; }
-  .mode-tab{ flex:1; text-align:center; padding:8px 4px; border-radius:9px; font-size:12px; font-weight:600; color:var(--hint); }
-  .mode-tab.active{ background: var(--card); color:var(--card-text); box-shadow:0 1px 2px rgba(0,0,0,0.06); }
-
-  .field{ margin-bottom: 12px; }
-  .field label{ font-size:12px; color:var(--hint); display:block; margin-bottom:5px; }
-  .field input{
-    width:100%; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--border);
-    background: var(--card); color: var(--card-text); font-size:15px;
-  }
-  .field-row{ display:flex; gap:10px; }
-  .field-row .field{ flex:1; }
-
-  .per100-hint{ font-size:11px; color:var(--hint); margin: -6px 0 12px; }
-
-  .sheet-actions{ display:flex; gap:10px; margin-top: 6px; }
-  .btn{
-    flex:1; padding:13px; border-radius:12px; border:none; font-size:15px; font-weight:700;
-  }
-  .btn-primary{ background: var(--button); color: var(--button-text); }
-  .btn-secondary{ background: var(--secondary-bg); color: var(--text); }
-  .btn-block{ width:100%; margin-top:4px; }
-
-  .checkbox-row{ display:flex; align-items:center; gap:8px; margin: 10px 0 14px; font-size:13px; color:var(--text); }
-  .checkbox-row input{ width:17px; height:17px; }
-
-  /* scan panel */
-  .scan-start{ text-align:center; padding: 24px 10px; }
-  .scan-start .big{ font-size:36px; display:block; margin-bottom:10px; }
-  .scan-hint{ font-size:12px; color:var(--hint); margin-top:8px; text-align:center; }
-  .scan-video-wrap{ position:relative; border-radius:14px; overflow:hidden; background:#000; margin-bottom:10px; }
-  .scan-video-wrap video{ width:100%; display:block; max-height: 260px; object-fit:cover; }
-  .scan-frame{
-    position:absolute; left:12%; right:12%; top:35%; bottom:35%;
-    border:2px solid rgba(255,255,255,0.85); border-radius:10px; pointer-events:none;
-  }
-  .scan-loading{ text-align:center; padding: 30px 10px; color:var(--hint); font-size:13px; }
-  .scan-result-card{ background:var(--card); border-radius:14px; padding:14px; margin-bottom:10px; }
-  .scan-result-name{ font-size:15px; font-weight:700; margin-bottom:2px; color: var(--card-text); }
-  .scan-result-barcode{ font-size:11px; color:var(--hint); margin-bottom:12px; }
-  .scan-total-line{ font-size:12px; color:var(--hint); margin: 10px 0 14px; }
-  .not-found-box{ text-align:center; padding: 20px 10px; color:var(--hint); font-size:13px; line-height:1.5; }
-
-  /* library panel */
-  .search-input{ margin-bottom:10px; }
-  .product-list{ max-height: 340px; overflow-y:auto; }
-  .product-row{ background:var(--card); border-radius:14px; padding:12px 14px; margin-bottom:8px; }
-  .product-row-top{ display:flex; align-items:center; justify-content:space-between; }
-  .product-row-name{ font-size:14px; font-weight:600; color: var(--card-text); }
-  .product-row-sub{ font-size:11px; color:var(--hint); margin-top:2px; }
-  .product-row-chevron{ border:none; background:var(--secondary-bg); color:var(--text); width:26px; height:26px; border-radius:50%; font-size:14px; }
-  .product-row-form{ display:none; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); gap:8px; }
-  .product-row-form.open{ display:flex; align-items:center; }
-  .product-row-form input{ flex:1; padding:9px 10px; border-radius:10px; border:1px solid var(--border); background:var(--bg); font-size:14px; }
-  .product-row-form button{ border:none; background:var(--button); color:var(--button-text); padding:9px 14px; border-radius:10px; font-size:13px; font-weight:700; white-space:nowrap; }
-
-  .basis-toggle{ display:flex; gap:8px; margin-bottom:14px; }
-  .basis-chip{ flex:1; text-align:center; padding:9px 4px; border-radius:12px; background:var(--secondary-bg); font-size:12px; border:1.5px solid transparent; }
-  .basis-chip.active{ border-color: var(--button); color: var(--button); font-weight:700; }
-
-  .preset-row{ display:flex; gap:6px; margin-bottom:14px; overflow-x:auto; }
-  .preset-chip{ flex-shrink:0; padding:7px 12px; border-radius:10px; background:var(--secondary-bg); font-size:11px; color:var(--text); white-space:nowrap; }
-  .pct-sum-line{ font-size:12px; margin: -4px 0 4px; color: var(--hint); }
-  .pct-sum-line.warn{ color: var(--c-protein); font-weight:600; }
-  .pct-grams-line{ font-size:12px; color: var(--hint); margin-bottom: 14px; }
-
-  .activity-list{ display:flex; flex-direction:column; gap:8px; }
-  .activity-row{ background:var(--secondary-bg); border-radius:12px; padding:10px 12px; border:1.5px solid transparent; }
-  .activity-row.active{ border-color: var(--button); background: var(--secondary-bg); }
-  .activity-name{ font-size:13px; font-weight:700; }
-  .activity-row.active .activity-name{ color: var(--button); }
-  .activity-desc{ font-size:11px; color:var(--hint); margin-top:2px; }
-
-  .calc-result-card{ background:var(--card); color:var(--card-text); border-radius:14px; padding:16px; margin-top:16px; }
-  .calc-result-cal{ font-size:26px; font-weight:800; text-align:center; }
-  .calc-result-cal .unit{ font-size:13px; font-weight:500; color:var(--hint); }
-  .calc-result-sub{ font-size:12px; color:var(--hint); text-align:center; margin-top:2px; }
-  .calc-result-macros{ display:flex; justify-content:space-between; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
-  .calc-result-macro{ text-align:center; flex:1; }
-  .calc-result-macro .val{ font-size:15px; font-weight:700; }
-  .calc-result-macro .lbl{ font-size:11px; color:var(--hint); margin-top:2px; }
-  .calc-warn{ font-size:11px; color: var(--c-protein); margin-top:10px; text-align:center; }
+  html, body { margin: 0; padding: 0; background: #14100D; }
 </style>
 </head>
 <body>
+<div id="root"></div>
+<script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useEffect, useRef } from "https://esm.sh/react@18.2.0";
+import { createRoot } from "https://esm.sh/react-dom@18.2.0/client?deps=react@18.2.0";
+import { Flame, ShoppingBag, Plus, Minus, MapPin, Clock, ChevronLeft, Check, CreditCard, QrCode, Banknote, X, Truck, Store, Phone, User, MessageSquare, Ticket } from "https://esm.sh/lucide-react@0.383.0?deps=react@18.2.0";
 
-<div class="topbar">
-  <h1>Дневник КБЖУ</h1>
-  <div class="date-nav">
-    <button id="openWeight" title="Вес">⚖️</button>
-    <button id="prevDay">‹</button>
-    <span class="date-label" id="dateLabel">Сегодня</span>
-    <button id="nextDay">›</button>
-  </div>
-</div>
+const POINTS = [
+  { id: "p1", name: "ул. Ленина, 24", time: "готово через ~15 мин" },
+  { id: "p2", name: "пр. Мира, 87", time: "готово через ~20 мин" },
+  { id: "p3", name: "ул. Гагарина, 5", time: "готово через ~18 мин" },
+];
 
-<div class="summary">
-  <div class="summary-top">
-    <div class="ring-wrap">
-      <svg width="104" height="104" viewBox="0 0 104 104">
-        <circle cx="52" cy="52" r="46" fill="none" stroke="var(--secondary-bg)" stroke-width="9"/>
-        <circle id="calRing" cx="52" cy="52" r="46" fill="none" stroke="var(--c-cal)" stroke-width="9"
-                stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="289"/>
-      </svg>
-      <div class="ring-center">
-        <div class="num" id="calNum">0</div>
-        <div class="label" id="calGoalLabel">из 2000</div>
-      </div>
-    </div>
-    <div class="macro-list">
-      <div class="macro-row">
-        <span class="macro-dot" style="background:var(--c-protein)"></span>
-        <span class="macro-name">Белки</span>
-        <div class="macro-bar-track"><div class="macro-bar-fill" id="proteinBar" style="background:var(--c-protein);width:0%"></div></div>
-        <span class="macro-val" id="proteinVal">0 / 0 г</span>
-      </div>
-      <div class="macro-row">
-        <span class="macro-dot" style="background:var(--c-fat)"></span>
-        <span class="macro-name">Жиры</span>
-        <div class="macro-bar-track"><div class="macro-bar-fill" id="fatBar" style="background:var(--c-fat);width:0%"></div></div>
-        <span class="macro-val" id="fatVal">0 / 0 г</span>
-      </div>
-      <div class="macro-row">
-        <span class="macro-dot" style="background:var(--c-carb)"></span>
-        <span class="macro-name">Углев.</span>
-        <div class="macro-bar-track"><div class="macro-bar-fill" id="carbBar" style="background:var(--c-carb);width:0%"></div></div>
-        <span class="macro-val" id="carbVal">0 / 0 г</span>
-      </div>
-    </div>
-  </div>
-  <div class="goals-link" id="openGoals">Настроить дневную норму</div>
-</div>
+const CATEGORIES = ["Шашлык", "Гарниры", "Соусы", "Напитки"];
 
-<div id="mealsContainer"></div>
+const ITEMS = [
+  { id: "sh1", cat: "Шашлык", name: "Шашлык из свиной шеи", weight: "300 г", kcal: "560 ккал", price: 420, mods: true },
+  { id: "sh2", cat: "Шашлык", name: "Шашлык из куриного бедра", weight: "300 г", kcal: "410 ккал", price: 350, mods: true },
+  { id: "sh3", cat: "Шашлык", name: "Шашлык из баранины", weight: "300 г", kcal: "520 ккал", price: 490, mods: true },
+  { id: "sh4", cat: "Шашлык", name: "Люля-кебаб говяжий", weight: "250 г", kcal: "480 ккал", price: 380, mods: true },
+  { id: "gr1", cat: "Гарниры", name: "Картофель по-деревенски", weight: "200 г", kcal: "260 ккал", price: 180, mods: false },
+  { id: "gr2", cat: "Гарниры", name: "Овощи гриль", weight: "200 г", kcal: "140 ккал", price: 220, mods: false },
+  { id: "gr3", cat: "Гарниры", name: "Рис с овощами", weight: "200 г", kcal: "310 ккал", price: 150, mods: false },
+  { id: "so1", cat: "Соусы", name: "Чесночный соус", weight: "50 г", kcal: "", price: 45, mods: false },
+  { id: "so2", cat: "Соусы", name: "Ткемали", weight: "50 г", kcal: "", price: 45, mods: false },
+  { id: "so3", cat: "Соусы", name: "Барбекю", weight: "50 г", kcal: "", price: 45, mods: false },
+  { id: "dr1", cat: "Напитки", name: "Домашний лимонад", weight: "0.5 л", kcal: "", price: 150, mods: false },
+  { id: "dr2", cat: "Напитки", name: "Морс ягодный", weight: "0.5 л", kcal: "", price: 130, mods: false },
+  { id: "dr3", cat: "Напитки", name: "Кола", weight: "0.5 л", kcal: "", price: 120, mods: false },
+];
 
-<button class="fab" id="openAdd">+</button>
+const SAUCES = ["Без соуса", "Чесночный", "Аджика", "Барбекю"];
+const SPICE = ["Обычный", "Острый"];
 
-<!-- Add entry sheet -->
-<div class="sheet-overlay" id="addOverlay">
-  <div class="sheet">
-    <div class="sheet-handle"></div>
-    <div class="sheet-head">
-      <h2>Добавить приём пищи</h2>
-      <button class="sheet-close" id="closeAdd">✕</button>
-    </div>
+const STEPS = ["home", "menu", "cart", "checkout", "payment"];
+const STEP_LABELS = { home: "Начало", menu: "Меню", cart: "Корзина", checkout: "Оформление", payment: "Оплата" };
 
-    <div class="meal-picker" id="mealPicker">
-      <div class="meal-chip active" data-meal="breakfast">🌅 Завтрак</div>
-      <div class="meal-chip" data-meal="lunch">☀️ Обед</div>
-      <div class="meal-chip" data-meal="dinner">🌙 Ужин</div>
-      <div class="meal-chip" data-meal="snack">🍎 Перекус</div>
-    </div>
+function money(n) {
+  return n.toLocaleString("ru-RU") + " ₽";
+}
 
-    <div class="mode-tabs" id="modeTabs">
-      <div class="mode-tab active" data-tab="scan">📷 Скан</div>
-      <div class="mode-tab" data-tab="library">📋 Мои продукты</div>
-      <div class="mode-tab" data-tab="manual">✏️ Вручную</div>
-    </div>
+export default function App() {
+  const [step, setStep] = useState("home");
+  const [serviceType, setServiceType] = useState("pickup");
+  const [pointId, setPointId] = useState(POINTS[0].id);
+  const [address, setAddress] = useState("");
+  const [timing, setTiming] = useState("asap");
+  const [scheduledTime, setScheduledTime] = useState("");
+  const [activeCat, setActiveCat] = useState("Шашлык");
+  const [cart, setCart] = useState([]);
+  const [modalItem, setModalItem] = useState(null);
+  const [modalSauce, setModalSauce] = useState(SAUCES[0]);
+  const [modalSpice, setModalSpice] = useState(SPICE[0]);
+  const [modalQty, setModalQty] = useState(1);
+  const [promo, setPromo] = useState("");
+  const [promoApplied, setPromoApplied] = useState(false);
+  const [promoError, setPromoError] = useState("");
+  const [customer, setCustomer] = useState({ name: "", phone: "", comment: "" });
+  const [payMethod, setPayMethod] = useState("card");
+  const [paying, setPaying] = useState(false);
+  const [order, setOrder] = useState(null);
+  const [statusIdx, setStatusIdx] = useState(0);
+  const scrollRef = useRef(null);
+  const [platform, setPlatform] = useState("browser"); // "telegram" | "max" | "browser"
+  const [appHeight, setAppHeight] = useState(typeof window !== "undefined" ? window.innerHeight : 800);
+  const [profileUser, setProfileUser] = useState(null); // { id, firstName, lastName, username, photo, source }
+  const [profileOrigin, setProfileOrigin] = useState("home");
+  const [orderHistory, setOrderHistory] = useState([]);
 
-    <div id="scanPanel"></div>
-    <div id="libraryPanel" style="display:none;"></div>
-
-    <div id="manualPanel" style="display:none;">
-      <div class="field">
-        <label>Название</label>
-        <input type="text" id="fName" placeholder="Например, куриная грудка">
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label>Вес, г</label>
-          <input type="number" id="fWeight" placeholder="150" inputmode="decimal">
-        </div>
-        <div class="field">
-          <label>Калории (на вес выше)</label>
-          <input type="number" id="fCal" placeholder="ккал" inputmode="decimal">
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label>Белки, г</label>
-          <input type="number" id="fProtein" placeholder="0" inputmode="decimal">
-        </div>
-        <div class="field">
-          <label>Жиры, г</label>
-          <input type="number" id="fFat" placeholder="0" inputmode="decimal">
-        </div>
-        <div class="field">
-          <label>Углев., г</label>
-          <input type="number" id="fCarb" placeholder="0" inputmode="decimal">
-        </div>
-      </div>
-      <div class="per100-hint">Введите итоговые значения для указанного веса — пересчитывать не нужно.</div>
-
-      <label class="checkbox-row">
-        <input type="checkbox" id="fSaveProduct">
-        Сохранить в «Мои продукты» для быстрого добавления в будущем
-      </label>
-
-      <button class="btn btn-primary btn-block" id="saveAdd">Добавить в дневник</button>
-    </div>
-  </div>
-</div>
-
-<!-- Goals sheet -->
-<div class="sheet-overlay" id="goalsOverlay">
-  <div class="sheet">
-    <div class="sheet-handle"></div>
-    <div class="sheet-head">
-      <h2>Дневная норма</h2>
-      <button class="sheet-close" id="closeGoals">✕</button>
-    </div>
-    <button class="btn btn-secondary btn-block" id="openCalc" style="margin-bottom:14px;">🧮 Рассчитать по формуле</button>
-
-    <div class="field">
-      <label>Калории в день, ккал</label>
-      <input type="number" id="gCal" inputmode="decimal">
-    </div>
-
-    <div class="basis-toggle" id="goalsModeToggle">
-      <div class="basis-chip active" data-mode="grams">В граммах</div>
-      <div class="basis-chip" data-mode="percent">В % от калорий</div>
-    </div>
-
-    <div id="gramsFields">
-      <div class="field-row">
-        <div class="field">
-          <label>Белки, г</label>
-          <input type="number" id="gProtein" inputmode="decimal">
-        </div>
-        <div class="field">
-          <label>Жиры, г</label>
-          <input type="number" id="gFat" inputmode="decimal">
-        </div>
-        <div class="field">
-          <label>Углев., г</label>
-          <input type="number" id="gCarb" inputmode="decimal">
-        </div>
-      </div>
-    </div>
-
-    <div id="percentFields" style="display:none;">
-      <div class="preset-row" id="presetRow">
-        <div class="preset-chip" data-p="30" data-f="30" data-c="40">Баланс 30/30/40</div>
-        <div class="preset-chip" data-p="40" data-f="30" data-c="30">Высокобелковая 40/30/30</div>
-        <div class="preset-chip" data-p="30" data-f="45" data-c="25">Низкоугл. 30/45/25</div>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label>Белки, %</label>
-          <input type="number" id="gProteinPct" inputmode="decimal">
-        </div>
-        <div class="field">
-          <label>Жиры, %</label>
-          <input type="number" id="gFatPct" inputmode="decimal">
-        </div>
-        <div class="field">
-          <label>Углев., %</label>
-          <input type="number" id="gCarbPct" inputmode="decimal">
-        </div>
-      </div>
-      <div class="pct-sum-line" id="pctSumLine">Сумма: 100%</div>
-      <div class="pct-grams-line" id="pctGramsLine">≈ 0 г белков · 0 г жиров · 0 г углеводов</div>
-    </div>
-
-    <button class="btn btn-primary btn-block" id="saveGoals">Сохранить</button>
-  </div>
-</div>
-
-<!-- Calorie calculator sheet -->
-<div class="sheet-overlay" id="calcOverlay" style="z-index:60;">
-  <div class="sheet">
-    <div class="sheet-handle"></div>
-    <div class="sheet-head">
-      <h2>Расчёт нормы</h2>
-      <button class="sheet-close" id="closeCalc">✕</button>
-    </div>
-
-    <div class="basis-toggle" id="calcSexToggle">
-      <div class="basis-chip active" data-sex="f">Женский</div>
-      <div class="basis-chip" data-sex="m">Мужской</div>
-    </div>
-
-    <div class="field-row">
-      <div class="field">
-        <label>Возраст, лет</label>
-        <input type="number" id="cAge" inputmode="numeric" placeholder="30">
-      </div>
-      <div class="field">
-        <label>Рост, см</label>
-        <input type="number" id="cHeight" inputmode="numeric" placeholder="170">
-      </div>
-      <div class="field">
-        <label>Вес, кг</label>
-        <input type="number" id="cWeight" inputmode="decimal" placeholder="65">
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Уровень активности</label>
-      <div class="activity-list" id="activityList">
-        <div class="activity-row active" data-factor="1.2">
-          <div class="activity-name">Минимальная</div>
-          <div class="activity-desc">Сидячая работа, без тренировок</div>
-        </div>
-        <div class="activity-row" data-factor="1.375">
-          <div class="activity-name">Лёгкая</div>
-          <div class="activity-desc">Тренировки 1–3 раза в неделю</div>
-        </div>
-        <div class="activity-row" data-factor="1.55">
-          <div class="activity-name">Средняя</div>
-          <div class="activity-desc">Тренировки 3–5 раз в неделю</div>
-        </div>
-        <div class="activity-row" data-factor="1.725">
-          <div class="activity-name">Высокая</div>
-          <div class="activity-desc">Тренировки 6–7 раз в неделю</div>
-        </div>
-        <div class="activity-row" data-factor="1.9">
-          <div class="activity-name">Очень высокая</div>
-          <div class="activity-desc">Физическая работа + спорт ежедневно</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Цель</label>
-      <div class="basis-toggle" id="calcGoalToggle">
-        <div class="basis-chip" data-goal="loss">Похудение</div>
-        <div class="basis-chip active" data-goal="maintain">Поддержание</div>
-        <div class="basis-chip" data-goal="gain">Набор массы</div>
-      </div>
-    </div>
-
-    <button class="btn btn-primary btn-block" id="runCalc">Рассчитать</button>
-
-    <div id="calcResult" style="display:none;"></div>
-  </div>
-</div>
-
-<!-- Create/edit product sheet -->
-<div class="sheet-overlay" id="productFormOverlay">
-  <div class="sheet">
-    <div class="sheet-handle"></div>
-    <div class="sheet-head">
-      <h2>Новый продукт</h2>
-      <button class="sheet-close" id="closeProductForm">✕</button>
-    </div>
-
-    <div class="field">
-      <label>Название</label>
-      <input type="text" id="pName" placeholder="Например, творог 5%">
-    </div>
-    <div class="field">
-      <label>Штрихкод (необязательно)</label>
-      <input type="text" id="pBarcode" placeholder="Автоматически при сканировании" inputmode="numeric">
-    </div>
-
-    <div class="basis-toggle" id="basisToggle">
-      <div class="basis-chip active" data-basis="per100">На 100 г</div>
-      <div class="basis-chip" data-basis="perServing">За порцию</div>
-    </div>
-
-    <div id="per100Fields">
-      <div class="field-row">
-        <div class="field"><label>Ккал / 100г</label><input type="number" id="pCal100" inputmode="decimal"></div>
-        <div class="field"><label>Белки / 100г</label><input type="number" id="pProtein100" inputmode="decimal"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Жиры / 100г</label><input type="number" id="pFat100" inputmode="decimal"></div>
-        <div class="field"><label>Углев. / 100г</label><input type="number" id="pCarb100" inputmode="decimal"></div>
-      </div>
-    </div>
-
-    <div id="perServingFields" style="display:none;">
-      <div class="field">
-        <label>Порция (например, «1 шт, 30 г»)</label>
-        <input type="text" id="pServingLabel" placeholder="1 шт">
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Ккал / порцию</label><input type="number" id="pCalS" inputmode="decimal"></div>
-        <div class="field"><label>Белки / порцию</label><input type="number" id="pProteinS" inputmode="decimal"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Жиры / порцию</label><input type="number" id="pFatS" inputmode="decimal"></div>
-        <div class="field"><label>Углев. / порцию</label><input type="number" id="pCarbS" inputmode="decimal"></div>
-      </div>
-    </div>
-
-    <button class="btn btn-primary btn-block" id="saveProductForm">Сохранить продукт</button>
-  </div>
-</div>
-
-<script>
-(function(){
-  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-  if (tg) { tg.ready(); tg.expand(); }
-
-  // ---------- Storage layer: Telegram CloudStorage with in-memory fallback ----------
-  const memStore = {};
-  const storage = {
-    get(key){
-      return new Promise((resolve) => {
-        if (tg && tg.CloudStorage) {
-          tg.CloudStorage.getItem(key, (err, value) => {
-            if (err) { console.error('CloudStorage.getItem error for key', key, err); resolve(memStore[key] ?? null); }
-            else resolve(value || memStore[key] || null);
-          });
-        } else {
-          resolve(memStore[key] ?? null);
-        }
-      });
-    },
-    set(key, value){
-      memStore[key] = value; // same-session fallback in case the cloud write fails
-      return new Promise((resolve) => {
-        if (tg && tg.CloudStorage) {
-          tg.CloudStorage.setItem(key, value, (err, success) => {
-            if (err || success === false) console.error('CloudStorage.setItem failed for key', key, err);
-            resolve();
-          });
-        } else {
-          resolve();
-        }
-      });
+  // Detect host platform and initialize its bridge. In production, host index.html
+  // should include both SDK tags in <head>:
+  //   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  //   <script src="https://st.max.ru/js/max-web-app.js"></script>
+  // These fallback injections just make the same file safe to preview standalone.
+  useEffect(() => {
+    function ensureScript(src) {
+      if (![...document.scripts].some((s) => s.src === src)) {
+        const s = document.createElement("script");
+        s.src = src;
+        s.async = true;
+        document.head.appendChild(s);
+      }
     }
-  };
+    try {
+      ensureScript("https://telegram.org/js/telegram-web-app.js");
+      ensureScript("https://st.max.ru/js/max-web-app.js");
+    } catch (e) {}
 
-  const MEALS = [
-    {id:'breakfast', label:'🌅 Завтрак'},
-    {id:'lunch', label:'☀️ Обед'},
-    {id:'dinner', label:'🌙 Ужин'},
-    {id:'snack', label:'🍎 Перекус'},
-  ];
+    let vp = document.querySelector('meta[name="viewport"]');
+    if (!vp) {
+      vp = document.createElement("meta");
+      vp.name = "viewport";
+      document.head.appendChild(vp);
+    }
+    vp.content = "width=device-width, initial-scale=1, viewport-fit=cover";
 
-  const DEFAULT_GOALS = { cal: 2000, protein: 120, fat: 65, carb: 230, mode:'grams', proteinPct:30, fatPct:30, carbPct:40 };
-  let goals = { ...DEFAULT_GOALS };
-  let goalsMode = 'grams';
+    function detect() {
+      if (window.Telegram && window.Telegram.WebApp) {
+        const tg = window.Telegram.WebApp;
+        try {
+          tg.ready();
+          tg.expand();
+          tg.setHeaderColor && tg.setHeaderColor("#1C1613");
+          tg.setBackgroundColor && tg.setBackgroundColor("#1C1613");
+          tg.disableVerticalSwipes && tg.disableVerticalSwipes();
+        } catch (e) {}
+        setPlatform("telegram");
+        const u = tg.initDataUnsafe && tg.initDataUnsafe.user;
+        if (u) {
+          setProfileUser({ id: u.id, firstName: u.first_name, lastName: u.last_name, username: u.username, photo: u.photo_url, source: "telegram" });
+        }
+      } else if (window.WebApp && typeof window.WebApp.platform === "string") {
+        setPlatform("max");
+        const u = window.WebApp.initDataUnsafe && window.WebApp.initDataUnsafe.user;
+        if (u) {
+          setProfileUser({ id: u.id, firstName: u.first_name, lastName: u.last_name, username: u.username, photo: u.photo_url, source: "max" });
+        }
+      } else {
+        setPlatform("browser");
+      }
+    }
+    detect();
+    const t = setTimeout(detect, 500); // SDKs can attach a moment after script load
+    return () => clearTimeout(t);
+  }, []);
 
-  let currentDate = new Date();
-  let selectedMeal = 'breakfast';
-  let dayEntries = [];
-  let products = [];
+  // Real viewport height (not 100vh) so keyboard/address-bar changes on Android & iOS
+  // don't clip content or the sticky bottom buttons.
+  useEffect(() => {
+    function updateHeight() {
+      setAppHeight(window.visualViewport ? window.visualViewport.height : window.innerHeight);
+    }
+    updateHeight();
+    window.addEventListener("resize", updateHeight);
+    window.visualViewport && window.visualViewport.addEventListener("resize", updateHeight);
+    return () => {
+      window.removeEventListener("resize", updateHeight);
+      window.visualViewport && window.visualViewport.removeEventListener("resize", updateHeight);
+    };
+  }, []);
 
-  let addTab = 'scan';
-  let scanState = 'idle'; // idle | scanning | loading | result
-  let scannedResult = null;
-  let codeReader = null;
-  let awaitingResult = false;
-
-  let libraryQuery = '';
-  let openProductRowId = null;
-
-  let productFormPrefillBarcode = '';
-
-  function haptic(type, style){
-    if (!tg || !tg.HapticFeedback) return;
-    if (type === 'impact') tg.HapticFeedback.impactOccurred(style || 'light');
-    if (type === 'notification') tg.HapticFeedback.notificationOccurred(style || 'success');
+  function haptic(kind) {
+    try {
+      if (platform === "telegram" && window.Telegram?.WebApp?.HapticFeedback) {
+        const hf = window.Telegram.WebApp.HapticFeedback;
+        if (kind === "success" || kind === "error" || kind === "warning") hf.notificationOccurred(kind);
+        else if (kind === "select") hf.selectionChanged();
+        else hf.impactOccurred(kind || "light");
+      } else if (platform === "max" && window.WebApp?.HapticFeedback) {
+        const hf = window.WebApp.HapticFeedback;
+        if (kind === "success" || kind === "error" || kind === "warning") hf.notificationOccurred(kind, true);
+        else if (kind === "select") hf.selectionChanged(true);
+        else hf.impactOccurred(kind || "light", true);
+      }
+    } catch (e) {}
   }
 
-  function dateKey(d){
-    const y = d.getFullYear();
-    const m = String(d.getMonth()+1).padStart(2,'0');
-    const day = String(d.getDate()).padStart(2,'0');
-    return `diary-${y}-${m}-${day}`;
+  // Order history is device-local (keyed by Telegram/MAX user id). In production this
+  // would instead be fetched from your backend by that same id, so it's available
+  // across devices — this is a lightweight stand-in for the prototype.
+  useEffect(() => {
+    try {
+      const key = `ugolki_orders_${(profileUser && profileUser.id) || "guest"}`;
+      const raw = localStorage.getItem(key);
+      setOrderHistory(raw ? JSON.parse(raw) : []);
+    } catch (e) {
+      setOrderHistory([]);
+    }
+  }, [profileUser && profileUser.id]);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTo(0, 0);
+  }, [step]);
+
+  useEffect(() => {
+    if (!order) return;
+    if (statusIdx >= 3) return;
+    const t = setTimeout(() => setStatusIdx((i) => i + 1), 3600);
+    return () => clearTimeout(t);
+  }, [order, statusIdx]);
+
+  const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
+  const discount = promoApplied ? Math.round(subtotal * 0.1) : 0;
+  const deliveryFee = serviceType === "delivery" && subtotal - discount < 1000 && subtotal > 0 ? 149 : 0;
+  const total = Math.max(subtotal - discount + deliveryFee, 0);
+  const cartCount = cart.reduce((s, l) => s + l.qty, 0);
+
+  function openModal(item) {
+    haptic("light");
+    if (item.mods) {
+      setModalItem(item);
+      setModalSauce(SAUCES[0]);
+      setModalSpice(SPICE[0]);
+      setModalQty(1);
+    } else {
+      addToCart(item.id, item.name, item.price, 1, null, null);
+    }
   }
 
-  function formatDateLabel(d){
-    const today = new Date();
-    const isToday = d.toDateString() === today.toDateString();
-    const yest = new Date(today); yest.setDate(yest.getDate()-1);
-    const isYest = d.toDateString() === yest.toDateString();
-    if (isToday) return 'Сегодня';
-    if (isYest) return 'Вчера';
-    return d.toLocaleDateString('ru-RU', { day:'numeric', month:'short' });
+  function addToCart(baseId, name, price, qty, sauce, spice) {
+    const lineId = sauce ? `${baseId}__${sauce}__${spice}` : baseId;
+    setCart((prev) => {
+      const found = prev.find((l) => l.lineId === lineId);
+      if (found) {
+        return prev.map((l) => (l.lineId === lineId ? { ...l, qty: l.qty + qty } : l));
+      }
+      return [...prev, { lineId, baseId, name, price, qty, sauce, spice }];
+    });
   }
 
-  function round1(n){ return Math.round((Number(n)||0)*10)/10; }
-  function escapeHtml(s){
-    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function changeQty(lineId, delta) {
+    haptic("light");
+    setCart((prev) =>
+      prev
+        .map((l) => (l.lineId === lineId ? { ...l, qty: l.qty + delta } : l))
+        .filter((l) => l.qty > 0)
+    );
   }
 
-  // ---------- Load ----------
-  async function loadGoals(){
-    const raw = await storage.get('goals');
-    if (raw) { try { goals = { ...DEFAULT_GOALS, ...JSON.parse(raw) }; } catch(e) {} }
-    document.getElementById('gCal').value = goals.cal;
-    document.getElementById('gProtein').value = goals.protein;
-    document.getElementById('gFat').value = goals.fat;
-    document.getElementById('gCarb').value = goals.carb;
-    document.getElementById('gProteinPct').value = goals.proteinPct;
-    document.getElementById('gFatPct').value = goals.fatPct;
-    document.getElementById('gCarbPct').value = goals.carbPct;
-    setGoalsMode(goals.mode || 'grams');
+  function applyPromo() {
+    if (promo.trim().toUpperCase() === "УГОЛЁК10") {
+      setPromoApplied(true);
+      setPromoError("");
+      haptic("success");
+    } else {
+      setPromoApplied(false);
+      setPromoError("Промокод не найден");
+      haptic("error");
+    }
   }
 
-  function setGoalsMode(mode){
-    goalsMode = mode;
-    document.querySelectorAll('#goalsModeToggle .basis-chip').forEach(c => c.classList.toggle('active', c.getAttribute('data-mode') === mode));
-    document.getElementById('gramsFields').style.display = mode === 'grams' ? 'block' : 'none';
-    document.getElementById('percentFields').style.display = mode === 'percent' ? 'block' : 'none';
-    if (mode === 'percent') updatePctPreview();
+  function goCheckoutFromCart() {
+    setStep("checkout");
   }
 
-  function updatePctPreview(){
-    const cal = parseFloat(document.getElementById('gCal').value) || 0;
-    const p = parseFloat(document.getElementById('gProteinPct').value) || 0;
-    const f = parseFloat(document.getElementById('gFatPct').value) || 0;
-    const c = parseFloat(document.getElementById('gCarbPct').value) || 0;
-    const sum = p + f + c;
-    const sumEl = document.getElementById('pctSumLine');
-    sumEl.textContent = `Сумма: ${sum}%`;
-    sumEl.classList.toggle('warn', sum !== 100);
-    const pG = round1(cal * p / 100 / 4);
-    const fG = round1(cal * f / 100 / 9);
-    const cG = round1(cal * c / 100 / 4);
-    document.getElementById('pctGramsLine').textContent = `≈ ${pG} г белков · ${fG} г жиров · ${cG} г углеводов`;
+  function submitPayment() {
+    haptic("medium");
+    setPaying(true);
+    setTimeout(() => {
+      setPaying(false);
+      haptic("success");
+      const num = "УГ-" + Math.floor(1000 + Math.random() * 9000);
+      setOrder({
+        num,
+        items: cart,
+        total,
+        serviceType,
+        point: POINTS.find((p) => p.id === pointId),
+        address,
+        timing,
+        scheduledTime,
+        customer,
+        payMethod,
+      });
+      setStatusIdx(0);
+      setStep("confirm");
+
+      const historyEntry = { num, date: Date.now(), items: cart, total, serviceType };
+      setOrderHistory((prev) => {
+        const next = [historyEntry, ...prev].slice(0, 20);
+        try {
+          localStorage.setItem(`ugolki_orders_${(profileUser && profileUser.id) || "guest"}`, JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+    }, 1500);
   }
 
-  async function loadProducts(){
-    const raw = await storage.get('products');
-    products = raw ? JSON.parse(raw) : [];
-  }
-  async function saveProducts(){
-    await storage.set('products', JSON.stringify(products));
-  }
-
-  async function loadDay(){
-    const raw = await storage.get(dateKey(currentDate));
-    dayEntries = raw ? JSON.parse(raw) : [];
-    document.getElementById('dateLabel').textContent = formatDateLabel(currentDate);
-    render();
-  }
-  async function saveDay(){
-    await storage.set(dateKey(currentDate), JSON.stringify(dayEntries));
+  function newOrder() {
+    setCart([]);
+    setOrder(null);
+    setStatusIdx(0);
+    setPromo("");
+    setPromoApplied(false);
+    setPromoError("");
+    setCustomer({ name: "", phone: "", comment: "" });
+    setStep("home");
   }
 
-  function totals(){
-    return dayEntries.reduce((acc, e) => {
-      acc.cal += Number(e.cal)||0;
-      acc.protein += Number(e.protein)||0;
-      acc.fat += Number(e.fat)||0;
-      acc.carb += Number(e.carb)||0;
-      return acc;
-    }, {cal:0, protein:0, fat:0, carb:0});
-  }
+  const stepIdx = STEPS.indexOf(step);
+  const canBack = step === "profile" ? true : stepIdx > 0;
 
-  function render(){
-    const t = totals();
-    const circumference = 289;
-    const pct = Math.min(t.cal / (goals.cal || 1), 1);
-    document.getElementById('calRing').style.strokeDashoffset = String(circumference * (1 - pct));
-    document.getElementById('calRing').style.stroke = t.cal > goals.cal ? '#C97064' : 'var(--c-cal)';
-    document.getElementById('calNum').textContent = Math.round(t.cal);
-    document.getElementById('calGoalLabel').textContent = `из ${goals.cal}`;
-
-    setBar('protein', t.protein, goals.protein);
-    setBar('fat', t.fat, goals.fat);
-    setBar('carb', t.carb, goals.carb);
-
-    renderMeals();
-  }
-
-  function setBar(key, val, goal){
-    const pct = Math.min((val / (goal||1)) * 100, 100);
-    document.getElementById(key+'Bar').style.width = pct + '%';
-    document.getElementById(key+'Val').textContent = `${Math.round(val)} / ${Math.round(goal)} г`;
-  }
-
-  function entrySubLabel(e){
-    if (e.weight) return `${e.weight} г · `;
-    if (e.servings) return `${e.servings} порц. · `;
-    return '';
-  }
-
-  function renderMeals(){
-    const container = document.getElementById('mealsContainer');
-    container.innerHTML = '';
-
-    if (dayEntries.length === 0) {
-      container.innerHTML = `<div class="empty-state"><span class="big">🍽️</span>Пока пусто.<br>Нажмите «+», чтобы добавить первый приём пищи.</div>`;
+  function goBack() {
+    if (step === "profile") {
+      setStep(profileOrigin);
       return;
     }
-
-    MEALS.forEach(meal => {
-      const items = dayEntries.filter(e => e.meal === meal.id);
-      if (items.length === 0) return;
-      const mealCal = items.reduce((s,e)=>s+(Number(e.cal)||0),0);
-
-      const section = document.createElement('div');
-      section.className = 'meal-section';
-      section.innerHTML = `
-        <div class="meal-header">
-          <div class="meal-title">${meal.label}</div>
-          <div class="meal-cal">${Math.round(mealCal)} ккал</div>
-        </div>
-      `;
-      items.forEach(e => {
-        const row = document.createElement('div');
-        row.className = 'entry';
-        row.innerHTML = `
-          <div class="entry-info">
-            <div class="entry-name">${escapeHtml(e.name)}</div>
-            <div class="entry-macros">${entrySubLabel(e)}Б:${round1(e.protein)} Ж:${round1(e.fat)} У:${round1(e.carb)}</div>
-          </div>
-          <div class="entry-cal">${Math.round(e.cal)}</div>
-          <button class="entry-del" data-id="${e.id}">✕</button>
-        `;
-        section.appendChild(row);
-      });
-      container.appendChild(section);
-    });
-
-    container.querySelectorAll('.entry-del').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = btn.getAttribute('data-id');
-        dayEntries = dayEntries.filter(e => e.id !== id);
-        haptic('impact','light');
-        await saveDay();
-        render();
-      });
-    });
+    if (stepIdx > 0) setStep(STEPS[stepIdx - 1]);
   }
 
-  async function addEntry(entry){
-    dayEntries.push(entry);
-    await saveDay();
-    render();
-  }
-
-  function newId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
-
-  // ---------- Date navigation ----------
-  document.getElementById('prevDay').addEventListener('click', () => { currentDate.setDate(currentDate.getDate()-1); loadDay(); });
-  document.getElementById('nextDay').addEventListener('click', () => { currentDate.setDate(currentDate.getDate()+1); loadDay(); });
-
-  // ---------- Add sheet open/close ----------
-  const addOverlay = document.getElementById('addOverlay');
-  document.getElementById('openAdd').addEventListener('click', () => {
-    addOverlay.classList.add('open');
-    haptic('impact','light');
-    switchAddTab('scan');
-  });
-  function closeAddOverlay(){
-    stopScan();
-    addOverlay.classList.remove('open');
-  }
-  document.getElementById('closeAdd').addEventListener('click', closeAddOverlay);
-  addOverlay.addEventListener('click', (e) => { if (e.target === addOverlay) closeAddOverlay(); });
-
-  document.getElementById('mealPicker').addEventListener('click', (e) => {
-    const chip = e.target.closest('.meal-chip');
-    if (!chip) return;
-    document.querySelectorAll('#mealPicker .meal-chip').forEach(c => c.classList.remove('active'));
-    chip.classList.add('active');
-    selectedMeal = chip.getAttribute('data-meal');
-  });
-
-  document.getElementById('modeTabs').addEventListener('click', (e) => {
-    const tab = e.target.closest('.mode-tab');
-    if (!tab) return;
-    switchAddTab(tab.getAttribute('data-tab'));
-  });
-
-  function switchAddTab(tab){
-    if (addTab === 'scan' && tab !== 'scan') stopScan();
-    addTab = tab;
-    document.querySelectorAll('#modeTabs .mode-tab').forEach(t => t.classList.toggle('active', t.getAttribute('data-tab') === tab));
-    document.getElementById('scanPanel').style.display = tab === 'scan' ? 'block' : 'none';
-    document.getElementById('libraryPanel').style.display = tab === 'library' ? 'block' : 'none';
-    document.getElementById('manualPanel').style.display = tab === 'manual' ? 'block' : 'none';
-    if (tab === 'scan') { scanState = 'idle'; scannedResult = null; renderScanPanel(); }
-    if (tab === 'library') { renderLibraryPanel(); }
-  }
-
-  // ---------- Manual add ----------
-  document.getElementById('saveAdd').addEventListener('click', async () => {
-    const name = document.getElementById('fName').value.trim();
-    const cal = parseFloat(document.getElementById('fCal').value) || 0;
-    const weight = parseFloat(document.getElementById('fWeight').value) || 0;
-    if (!name || !cal) { haptic('notification','error'); return; }
-    const protein = parseFloat(document.getElementById('fProtein').value) || 0;
-    const fat = parseFloat(document.getElementById('fFat').value) || 0;
-    const carb = parseFloat(document.getElementById('fCarb').value) || 0;
-
-    await addEntry({ id:newId(), meal:selectedMeal, name, weight: weight || undefined, cal, protein, fat, carb });
-
-    if (document.getElementById('fSaveProduct').checked) {
-      if (weight > 0) {
-        const factor = 100 / weight;
-        products.push({ id:newId(), name, basis:'per100',
-          cal100: round1(cal*factor), protein100: round1(protein*factor), fat100: round1(fat*factor), carb100: round1(carb*factor) });
+  // Native back button: on Telegram/MAX we drive their chrome back arrow instead of
+  // (or in addition to) our in-app chevron, so it also catches the hardware/gesture back.
+  useEffect(() => {
+    if (platform === "telegram" && window.Telegram?.WebApp?.BackButton) {
+      const bb = window.Telegram.WebApp.BackButton;
+      const handler = () => goBack();
+      if (canBack) {
+        bb.show();
+        bb.onClick(handler);
       } else {
-        products.push({ id:newId(), name, basis:'perServing', servingLabel:'1 порция',
-          calS: cal, proteinS: protein, fatS: fat, carbS: carb });
+        bb.hide();
       }
-      await saveProducts();
+      return () => bb.offClick(handler);
     }
-
-    ['fName','fWeight','fCal','fProtein','fFat','fCarb'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('fSaveProduct').checked = false;
-    closeAddOverlay();
-    haptic('notification','success');
-  });
-
-  // ---------- Scan panel ----------
-  function buildScanPanelDOM(){
-    const el = document.getElementById('scanPanel');
-    el.innerHTML = `
-      <div id="scanIdleBox" class="scan-start">
-        <span class="big">📷</span>
-        <div>Наведите камеру на штрихкод продукта</div>
-        <button class="btn btn-primary btn-block" data-action="start">Включить камеру</button>
-        <div class="scan-hint">Работает в мобильном приложении Telegram. Данные о продукте берутся из Open Food Facts.</div>
-      </div>
-      <div id="scanUnavailableBox" class="not-found-box" style="display:none;">Сканер недоступен в этом клиенте Telegram.<br>Добавьте продукт вручную.</div>
-      <div id="scanVideoBox" style="display:none;">
-        <div class="scan-video-wrap">
-          <video id="scanVideo" autoplay playsinline muted></video>
-          <div class="scan-frame"></div>
-        </div>
-        <button class="btn btn-secondary btn-block" data-action="stop">Остановить сканирование</button>
-      </div>
-      <div id="scanLoadingBox" class="scan-loading" style="display:none;">Ищем продукт по штрихкоду…</div>
-      <div id="scanResultBox" style="display:none;"></div>
-    `;
-  }
-
-  function renderScanPanel(){
-    document.getElementById('scanIdleBox').style.display = scanState === 'idle' ? 'block' : 'none';
-    document.getElementById('scanUnavailableBox').style.display = scanState === 'unavailable' ? 'block' : 'none';
-    document.getElementById('scanVideoBox').style.display = scanState === 'scanning' ? 'block' : 'none';
-    document.getElementById('scanLoadingBox').style.display = scanState === 'loading' ? 'block' : 'none';
-    const resultBox = document.getElementById('scanResultBox');
-    resultBox.style.display = scanState === 'result' ? 'block' : 'none';
-
-    if (scanState === 'scanning') {
-      ensureCameraStarted();
-    } else if (scanState === 'result' && scannedResult) {
-      if (scannedResult.found) {
-        resultBox.innerHTML = `
-          <div class="scan-result-card">
-            <div class="field"><label>Название</label><input type="text" id="srName" value="${escapeHtml(scannedResult.name)}"></div>
-            <div class="scan-result-barcode">Штрихкод: ${scannedResult.barcode}</div>
-            <div class="field-row">
-              <div class="field"><label>Ккал/100г</label><input type="number" id="srCal" value="${scannedResult.cal100}"></div>
-              <div class="field"><label>Белки/100г</label><input type="number" id="srProtein" value="${scannedResult.protein100}"></div>
-            </div>
-            <div class="field-row">
-              <div class="field"><label>Жиры/100г</label><input type="number" id="srFat" value="${scannedResult.fat100}"></div>
-              <div class="field"><label>Углев/100г</label><input type="number" id="srCarb" value="${scannedResult.carb100}"></div>
-            </div>
-            <div class="field"><label>Съедено, г</label><input type="number" id="srWeight" value="100"></div>
-            <div class="scan-total-line" id="srTotalLine"></div>
-            <label class="checkbox-row"><input type="checkbox" id="srSaveProduct" checked> Сохранить в «Мои продукты»</label>
-            <button class="btn btn-primary btn-block" data-action="addScanned">Добавить в дневник</button>
-            <button class="btn btn-secondary btn-block" data-action="rescan" style="margin-top:8px;">Сканировать другой</button>
-          </div>`;
-        const updateTotal = () => {
-          const w = parseFloat(document.getElementById('srWeight').value) || 0;
-          const f = w/100;
-          const cal = (parseFloat(document.getElementById('srCal').value)||0)*f;
-          const p = (parseFloat(document.getElementById('srProtein').value)||0)*f;
-          const ft = (parseFloat(document.getElementById('srFat').value)||0)*f;
-          const c = (parseFloat(document.getElementById('srCarb').value)||0)*f;
-          document.getElementById('srTotalLine').textContent = `Итого: ${Math.round(cal)} ккал · Б ${round1(p)} · Ж ${round1(ft)} · У ${round1(c)}`;
-        };
-        ['srWeight','srCal','srProtein','srFat','srCarb'].forEach(id => document.getElementById(id).addEventListener('input', updateTotal));
-        updateTotal();
+    if (platform === "max" && window.WebApp?.BackButton) {
+      const bb = window.WebApp.BackButton;
+      const handler = () => goBack();
+      if (canBack) {
+        bb.show();
+        bb.onClick(handler);
       } else {
-        resultBox.innerHTML = `
-          <div class="not-found-box">
-            Товар со штрихкодом ${scannedResult.barcode} не найден в базе Open Food Facts.
-          </div>
-          <button class="btn btn-primary btn-block" data-action="createFromBarcode">Создать продукт вручную</button>
-          <button class="btn btn-secondary btn-block" data-action="rescan" style="margin-top:8px;">Сканировать другой</button>`;
+        bb.hide();
       }
+      return () => bb.offClick(handler);
     }
-  }
+  }, [step, platform, canBack]);
 
-  document.getElementById('scanPanel').addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-action]');
-    if (!btn) return;
-    const action = btn.getAttribute('data-action');
-    if (action === 'start') { scanState='scanning'; renderScanPanel(); }
-    else if (action === 'stop') { stopScan(); scanState='idle'; renderScanPanel(); }
-    else if (action === 'rescan') { awaitingResult=false; scannedResult=null; scanState='scanning'; renderScanPanel(); }
-    else if (action === 'createFromBarcode') {
-      productFormPrefillBarcode = scannedResult ? scannedResult.barcode : '';
-      openProductForm();
-    }
-    else if (action === 'addScanned') {
-      const name = document.getElementById('srName').value.trim() || 'Продукт';
-      const cal100 = parseFloat(document.getElementById('srCal').value) || 0;
-      const protein100 = parseFloat(document.getElementById('srProtein').value) || 0;
-      const fat100 = parseFloat(document.getElementById('srFat').value) || 0;
-      const carb100 = parseFloat(document.getElementById('srCarb').value) || 0;
-      const weight = parseFloat(document.getElementById('srWeight').value) || 100;
-      const f = weight/100;
-      await addEntry({ id:newId(), meal:selectedMeal, name, weight,
-        cal: round1(cal100*f), protein: round1(protein100*f), fat: round1(fat100*f), carb: round1(carb100*f) });
-      if (document.getElementById('srSaveProduct').checked) {
-        products.push({ id:newId(), name, barcode: scannedResult.barcode, basis:'per100', cal100, protein100, fat100, carb100 });
-        await saveProducts();
-      }
-      closeAddOverlay();
-      haptic('notification','success');
-    }
-  });
-
-  // Starts the camera only if it isn't already running — reused across rescans so the
-  // browser only asks for camera permission once per scanning session, not per barcode.
-  function ensureCameraStarted(){
-    if (codeReader) return; // stream already live, just keep decoding
-    if (!window.ZXing) { scanState='unavailable'; renderScanPanel(); return; }
+  // Warn before closing while the person has items in cart and is mid-checkout.
+  useEffect(() => {
+    const shouldWarn = cart.length > 0 && (step === "checkout" || step === "payment");
     try {
-      codeReader = new ZXing.BrowserMultiFormatReader();
-      codeReader.decodeFromVideoDevice(null, 'scanVideo', (result, err) => {
-        if (result && !awaitingResult) {
-          awaitingResult = true;
-          handleBarcode(result.getText());
+      if (platform === "telegram" && window.Telegram?.WebApp) {
+        shouldWarn ? window.Telegram.WebApp.enableClosingConfirmation() : window.Telegram.WebApp.disableClosingConfirmation();
+      } else if (platform === "max" && window.WebApp) {
+        shouldWarn ? window.WebApp.enableClosingConfirmation() : window.WebApp.disableClosingConfirmation();
+      }
+    } catch (e) {}
+  }, [step, cart.length, platform]);
+
+  const statuses =
+    serviceType === "delivery"
+      ? ["Принят", "Готовится", "В пути", "Доставлен"]
+      : ["Принят", "Готовится", "Готов к выдаче", "Выдан"];
+
+  return (
+    <div className={`page ${platform !== "browser" ? "embedded" : ""}`} style={{ "--app-height": `${appHeight}px` }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        .page {
+          height: var(--app-height, 100dvh);
+          background: #14100D;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 24px 12px;
+          font-family: 'Manrope', sans-serif;
+          overflow: hidden;
         }
-      }).catch(() => { codeReader = null; scanState='unavailable'; renderScanPanel(); });
-    } catch(e) {
-      codeReader = null; scanState='unavailable'; renderScanPanel();
-    }
-  }
+        .page.embedded {
+          padding: 0;
+        }
+        .frame {
+          width: 100%;
+          max-width: 420px;
+          height: 840px;
+          max-height: 100%;
+          background: #1C1613;
+          border-radius: 34px;
+          overflow: hidden;
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 0 30px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04);
+        }
+        .embedded .frame {
+          max-width: 100%;
+          height: 100%;
+          max-height: none;
+          border-radius: 0;
+          box-shadow: none;
+        }
+        .topbar {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: calc(18px + env(safe-area-inset-top)) 18px 10px;
+          flex-shrink: 0;
+        }
+        .backbtn {
+          width: 34px; height: 34px;
+          border-radius: 10px;
+          background: rgba(255,255,255,0.06);
+          border: none;
+          display: flex; align-items: center; justify-content: center;
+          color: #F6EEE1;
+          cursor: pointer;
+        }
+        .topbar h1 {
+          font-family: 'Oswald', sans-serif;
+          font-weight: 600;
+          font-size: 18px;
+          letter-spacing: 0.02em;
+          color: #F6EEE1;
+          margin: 0;
+          text-transform: uppercase;
+          flex: 1;
+        }
+        .cartchip {
+          display: flex; align-items: center; gap: 6px;
+          background: #2A211B;
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 20px;
+          padding: 7px 12px;
+          color: #F6EEE1;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 12px;
+          cursor: pointer;
+        }
+        .dots { display: flex; gap: 5px; padding: 0 18px 12px; flex-shrink: 0; }
+        .dot { height: 3px; flex: 1; border-radius: 3px; background: rgba(255,255,255,0.09); }
+        .dot.done { background: #FF5A2A; }
+        .scroll {
+          flex: 1;
+          overflow-y: auto;
+          padding: 4px 18px 18px;
+        }
+        .scroll::-webkit-scrollbar { width: 0; }
 
-  function stopScan(){
-    if (codeReader) { try { codeReader.reset(); } catch(e){} codeReader = null; }
-    awaitingResult = false;
-  }
+        /* HOME */
+        .hero {
+          padding: 18px 4px 26px;
+        }
+        .hero .brand {
+          font-family: 'Oswald', sans-serif;
+          font-size: 34px;
+          font-weight: 700;
+          letter-spacing: 0.01em;
+          color: #FBF3E4;
+          display: flex; align-items: center; gap: 10px;
+          margin: 0;
+        }
+        .hero .tag {
+          color: #A79485;
+          font-size: 13.5px;
+          margin-top: 6px;
+        }
+        .flameicon { color: #FF5A2A; }
+        .segwrap {
+          display: flex;
+          background: #241C17;
+          border-radius: 14px;
+          padding: 4px;
+          margin-top: 22px;
+          gap: 4px;
+        }
+        .segbtn {
+          flex: 1;
+          border: none;
+          background: transparent;
+          color: #A79485;
+          font-family: 'Manrope', sans-serif;
+          font-weight: 700;
+          font-size: 13.5px;
+          padding: 11px 6px;
+          border-radius: 10px;
+          display: flex; align-items: center; justify-content: center; gap: 7px;
+          cursor: pointer;
+          transition: all .15s;
+        }
+        .segbtn.active {
+          background: linear-gradient(135deg,#FF5A2A,#E8401A);
+          color: #fff;
+        }
+        .sectionlabel {
+          font-family: 'JetBrains Mono', monospace;
+          text-transform: uppercase;
+          font-size: 11px;
+          letter-spacing: 0.09em;
+          color: #7C6E62;
+          margin: 24px 0 10px;
+        }
+        .pointcard {
+          display: flex; align-items: center; gap: 12px;
+          background: #241C17;
+          border: 1.5px solid rgba(255,255,255,0.05);
+          border-radius: 14px;
+          padding: 13px 14px;
+          margin-bottom: 9px;
+          cursor: pointer;
+        }
+        .pointcard.sel {
+          border-color: #FF5A2A;
+          background: #2A1E17;
+        }
+        .pointcard .pin {
+          width: 34px; height: 34px; border-radius: 10px;
+          background: rgba(255,90,42,0.13);
+          color: #FF8A5B;
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+        .pointcard .pname { color: #F6EEE1; font-weight: 700; font-size: 14px; }
+        .pointcard .ptime { color: #8C8178; font-size: 12px; margin-top: 2px; }
+        .radiodot {
+          width: 18px; height: 18px; border-radius: 50%;
+          border: 2px solid #5A4E44;
+          margin-left: auto; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .pointcard.sel .radiodot { border-color: #FF5A2A; }
+        .radiodot .inner { width: 9px; height: 9px; border-radius: 50%; background: #FF5A2A; }
+        .addrbox {
+          background: #241C17;
+          border: 1.5px solid rgba(255,255,255,0.05);
+          border-radius: 14px;
+          padding: 14px;
+        }
+        .addrbox input {
+          width: 100%;
+          background: #17110D;
+          border: 1px solid rgba(255,255,255,0.07);
+          border-radius: 10px;
+          padding: 12px 12px;
+          color: #F6EEE1;
+          font-family: 'Manrope', sans-serif;
+          font-size: 14px;
+          outline: none;
+        }
+        .addrbox input::placeholder { color: #6B5F54; }
+        .addrbox .hint { color: #8C8178; font-size: 11.5px; margin-top: 8px; display:flex; gap:6px; align-items:center; }
 
-  async function handleBarcode(barcode){
-    scanState = 'loading'; renderScanPanel();
-    try {
-      const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json?fields=product_name,nutriments,brands`);
-      const data = await res.json();
-      if (data && data.status === 1 && data.product) {
-        const n = data.product.nutriments || {};
-        scannedResult = {
-          barcode, found:true,
-          name: data.product.product_name || data.product.brands || 'Продукт',
-          cal100: Math.round(n['energy-kcal_100g'] ?? 0),
-          protein100: round1(n['proteins_100g'] ?? 0),
-          fat100: round1(n['fat_100g'] ?? 0),
-          carb100: round1(n['carbohydrates_100g'] ?? 0),
-        };
-      } else {
-        scannedResult = { barcode, found:false };
-      }
-    } catch(e) {
-      scannedResult = { barcode, found:false };
-    }
-    scanState = 'result'; renderScanPanel();
-  }
+        .primarybtn {
+          width: 100%;
+          border: none;
+          background: linear-gradient(135deg,#FF6B35,#E8401A);
+          color: #fff;
+          font-family: 'Oswald', sans-serif;
+          font-weight: 600;
+          font-size: 15.5px;
+          letter-spacing: 0.02em;
+          text-transform: uppercase;
+          padding: 16px;
+          border-radius: 14px;
+          cursor: pointer;
+          box-shadow: 0 10px 24px rgba(255,90,42,0.28);
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .primarybtn:disabled {
+          opacity: 0.4;
+          box-shadow: none;
+          cursor: not-allowed;
+        }
+        .secondarybtn {
+          width: 100%;
+          border: 1.5px solid rgba(255,255,255,0.1);
+          background: transparent;
+          color: #F6EEE1;
+          font-family: 'Manrope', sans-serif;
+          font-weight: 700;
+          font-size: 14px;
+          padding: 13px;
+          border-radius: 14px;
+          cursor: pointer;
+        }
+        .homecta { margin-top: 24px; }
 
-  // ---------- Library panel ----------
-  function renderLibraryPanel(){
-    const el = document.getElementById('libraryPanel');
-    const filtered = products.filter(p => p.name.toLowerCase().includes(libraryQuery.toLowerCase()));
-    let html = `<input type="text" class="field-input" id="librarySearch" placeholder="Поиск продукта…" value="${escapeHtml(libraryQuery)}"
-                  style="width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--card-text);font-size:15px;" class="search-input">`;
-    html += `<div class="product-list">`;
-    if (filtered.length === 0) {
-      html += `<div class="empty-state" style="padding:16px 4px;">${products.length === 0 ? 'Пока нет сохранённых продуктов.' : 'Ничего не найдено.'}</div>`;
-    } else {
-      filtered.forEach(p => {
-        const sub = p.basis === 'per100'
-          ? `${Math.round(p.cal100)} ккал / 100г · Б${round1(p.protein100)} Ж${round1(p.fat100)} У${round1(p.carb100)}`
-          : `${Math.round(p.calS)} ккал / ${escapeHtml(p.servingLabel||'порция')}`;
-        html += `
-          <div class="product-row" data-id="${p.id}">
-            <div class="product-row-top">
-              <div>
-                <div class="product-row-name">${escapeHtml(p.name)}</div>
-                <div class="product-row-sub">${sub}</div>
+        /* MENU */
+        .cats {
+          display: flex;
+          gap: 8px;
+          overflow-x: auto;
+          padding-bottom: 4px;
+          margin-bottom: 14px;
+        }
+        .cats::-webkit-scrollbar { display: none; }
+        .catbtn {
+          flex-shrink: 0;
+          border: none;
+          background: #241C17;
+          color: #A79485;
+          font-family: 'Manrope', sans-serif;
+          font-weight: 700;
+          font-size: 13px;
+          padding: 9px 15px;
+          border-radius: 20px;
+          cursor: pointer;
+          position: relative;
+        }
+        .catbtn.active {
+          background: #2E2119;
+          color: #FF8A5B;
+          box-shadow: inset 0 0 0 1.5px #FF5A2A;
+        }
+        .dishcard {
+          background: #241C17;
+          border-radius: 16px;
+          padding: 14px;
+          margin-bottom: 10px;
+          display: flex;
+          gap: 12px;
+          align-items: center;
+        }
+        .dishicon {
+          width: 52px; height: 52px; border-radius: 12px;
+          background: radial-gradient(circle at 30% 25%, #3A2A1E, #201712);
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+          color: #FF7A45;
+        }
+        .dishinfo { flex: 1; min-width: 0; }
+        .dishinfo .dname { color: #F6EEE1; font-weight: 700; font-size: 14px; line-height: 1.3; }
+        .dishinfo .dmeta {
+          font-family: 'JetBrains Mono', monospace;
+          color: #7C6E62;
+          font-size: 10.5px;
+          margin-top: 4px;
+          letter-spacing: 0.02em;
+        }
+        .dishinfo .dprice {
+          font-family: 'Oswald', sans-serif;
+          color: #FF8A5B;
+          font-weight: 600;
+          font-size: 15px;
+          margin-top: 6px;
+        }
+        .addbtn {
+          width: 36px; height: 36px;
+          border-radius: 10px;
+          border: none;
+          background: rgba(255,90,42,0.15);
+          color: #FF7A45;
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+
+        .stickycta {
+          position: absolute;
+          left: 18px; right: 18px;
+          bottom: calc(18px + env(safe-area-inset-bottom));
+        }
+        .floatbar {
+          position: absolute;
+          left: 14px; right: 14px;
+          bottom: calc(14px + env(safe-area-inset-bottom));
+          background: linear-gradient(135deg,#FF6B35,#E8401A);
+          border-radius: 16px;
+          padding: 14px 16px;
+          display: flex; align-items: center; justify-content: space-between;
+          box-shadow: 0 14px 30px rgba(255,90,42,0.35);
+          cursor: pointer;
+          color: #fff;
+        }
+        .floatbar .fbleft { display: flex; align-items: center; gap: 10px; }
+        .floatbar .badge {
+          background: rgba(255,255,255,0.25);
+          border-radius: 8px;
+          width: 24px; height: 24px;
+          font-size: 12px; font-weight: 800;
+          display: flex; align-items: center; justify-content: center;
+          font-family: 'JetBrains Mono', monospace;
+        }
+        .floatbar .flabel { font-weight: 700; font-size: 14px; font-family: 'Manrope', sans-serif; }
+        .floatbar .fsum { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 15px; }
+
+        /* MODAL */
+        .modalbg {
+          position: absolute; inset: 0;
+          background: rgba(10,7,5,0.6);
+          display: flex; align-items: flex-end;
+          z-index: 20;
+        }
+        .sheet {
+          width: 100%;
+          background: #201812;
+          border-radius: 22px 22px 0 0;
+          padding: 20px 20px 22px;
+          border-top: 1px solid rgba(255,255,255,0.06);
+        }
+        .sheet .sheethead { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+        .sheet h2 { font-family: 'Oswald', sans-serif; color: #F6EEE1; font-size: 18px; margin: 0; font-weight: 600; }
+        .sheet .xbtn { color: #8C8178; background: none; border: none; cursor: pointer; }
+        .optlabel { color: #7C6E62; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; margin: 14px 0 8px; }
+        .optrow { display: flex; gap: 8px; flex-wrap: wrap; }
+        .optchip {
+          border: 1.5px solid rgba(255,255,255,0.08);
+          background: #2A211B;
+          color: #C9BCAE;
+          font-size: 12.5px; font-weight: 600;
+          padding: 8px 13px;
+          border-radius: 20px;
+          cursor: pointer;
+        }
+        .optchip.on { border-color: #FF5A2A; color: #FF8A5B; background: rgba(255,90,42,0.12); }
+        .qtyrow { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
+        .qtystep { display: flex; align-items: center; gap: 14px; }
+        .qtystep button {
+          width: 32px; height: 32px; border-radius: 9px; border: none;
+          background: #2A211B; color: #F6EEE1; display: flex; align-items: center; justify-content: center; cursor: pointer;
+        }
+        .qtystep span { font-family: 'Oswald', sans-serif; color: #F6EEE1; font-size: 16px; min-width: 16px; text-align: center; }
+
+        /* CART */
+        .cartline {
+          display: flex; align-items: center; gap: 12px;
+          padding: 12px 0;
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .cartline .cname { color: #F6EEE1; font-weight: 700; font-size: 13.5px; }
+        .cartline .cmods { color: #7C6E62; font-size: 11px; margin-top: 2px; }
+        .cartline .cprice { font-family:'Oswald',sans-serif; color: #FF8A5B; font-size: 13.5px; margin-top: 5px; font-weight: 600; }
+        .stepper { display: flex; align-items: center; gap: 10px; background: #241C17; border-radius: 10px; padding: 4px; }
+        .stepper button { width: 26px; height: 26px; border: none; border-radius: 7px; background: #2E241C; color: #F6EEE1; cursor: pointer; }
+        .stepper span { font-family: 'JetBrains Mono', monospace; color: #F6EEE1; font-size: 13px; min-width: 12px; text-align: center; }
+        .empty { text-align: center; padding: 60px 20px; color: #7C6E62; }
+        .empty svg { margin-bottom: 12px; opacity: 0.5; }
+
+        .promorow { display: flex; gap: 8px; margin-top: 20px; }
+        .promorow input {
+          flex: 1; background: #17110D; border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 10px; padding: 11px 12px; color: #F6EEE1; font-family: 'JetBrains Mono', monospace;
+          font-size: 13px; outline: none; text-transform: uppercase;
+        }
+        .promorow input::placeholder { color: #6B5F54; text-transform: none; }
+        .promorow button {
+          background: #2A211B; border: 1px solid rgba(255,255,255,0.08); color: #F6EEE1;
+          border-radius: 10px; padding: 0 16px; font-weight: 700; font-size: 12.5px; cursor: pointer;
+        }
+        .promomsg { font-size: 11.5px; margin-top: 7px; }
+        .promomsg.ok { color: #8FBF7A; }
+        .promomsg.err { color: #E8705A; }
+
+        .sumrow { display: flex; justify-content: space-between; padding: 6px 0; color: #A79485; font-size: 13px; }
+        .sumrow.total { color: #F6EEE1; font-weight: 800; font-size: 16px; font-family: 'Oswald', sans-serif; border-top: 1px dashed rgba(255,255,255,0.12); margin-top: 8px; padding-top: 14px; }
+        .sumrow .neg { color: #8FBF7A; }
+
+        /* CHECKOUT */
+        .fieldlabel { color: #7C6E62; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; margin: 18px 0 8px; }
+        .textinput {
+          width: 100%; background: #241C17; border: 1.5px solid rgba(255,255,255,0.06);
+          border-radius: 12px; padding: 13px 14px 13px 40px; color: #F6EEE1; font-family: 'Manrope', sans-serif;
+          font-size: 14px; outline: none; position: relative;
+        }
+        .inputwrap { position: relative; }
+        .inputwrap svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #7C6E62; }
+        .textinput::placeholder { color: #6B5F54; }
+        .timechoice { display: flex; gap: 8px; }
+        .timechoice button {
+          flex: 1; border: 1.5px solid rgba(255,255,255,0.07); background: #241C17; color: #C9BCAE;
+          font-weight: 700; font-size: 13px; padding: 11px; border-radius: 12px; cursor: pointer;
+        }
+        .timechoice button.on { border-color: #FF5A2A; color: #FF8A5B; background: rgba(255,90,42,0.1); }
+        .recapcard {
+          background: #241C17; border-radius: 14px; padding: 14px; display: flex; gap: 12px; align-items: flex-start;
+        }
+        .recapcard .ricon { color: #FF7A45; flex-shrink: 0; margin-top: 2px; }
+        .recapcard .rtitle { color: #F6EEE1; font-weight: 700; font-size: 13.5px; }
+        .recapcard .rsub { color: #8C8178; font-size: 12px; margin-top: 3px; }
+
+        /* PAYMENT */
+        .paycard {
+          display: flex; align-items: center; gap: 13px;
+          background: #241C17; border: 1.5px solid rgba(255,255,255,0.05);
+          border-radius: 14px; padding: 14px; margin-bottom: 10px; cursor: pointer;
+        }
+        .paycard.sel { border-color: #FF5A2A; background: #2A1E17; }
+        .paycard .picn {
+          width: 38px; height: 38px; border-radius: 10px; background: rgba(255,90,42,0.13);
+          color: #FF8A5B; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .paycard .pname2 { color: #F6EEE1; font-weight: 700; font-size: 14px; }
+        .paycard .psub { color: #8C8178; font-size: 11.5px; margin-top: 2px; }
+        .paytotalbar {
+          background: #241C17; border-radius: 14px; padding: 16px; display: flex; justify-content: space-between; align-items: center; margin: 18px 0;
+        }
+        .paytotalbar .ptl { color: #8C8178; font-size: 12.5px; }
+        .paytotalbar .ptv { font-family: 'Oswald', sans-serif; color: #F6EEE1; font-size: 22px; font-weight: 700; margin-top: 2px; }
+        .spinner {
+          width: 18px; height: 18px; border-radius: 50%;
+          border: 2.5px solid rgba(255,255,255,0.35); border-top-color: #fff;
+          animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* CONFIRM */
+        .confirmwrap { padding: 10px 4px 4px; }
+        .ticket {
+          background: #FBF3E4;
+          border-radius: 18px;
+          padding: 22px 20px 18px;
+          position: relative;
+          color: #241C17;
+          box-shadow: 0 14px 30px rgba(0,0,0,0.35);
+        }
+        .ticket .thead { text-align: center; }
+        .ticket .thead .flamewrap { display: flex; justify-content: center; margin-bottom: 6px; }
+        .ticket .thead h2 { font-family: 'Oswald', sans-serif; font-size: 19px; font-weight: 700; margin: 0; letter-spacing: 0.01em; }
+        .ticket .thead .tnum { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #8A7B6B; margin-top: 4px; }
+        .perf {
+          position: relative;
+          height: 1px;
+          margin: 16px -20px;
+          border-top: 1.5px dashed #D8C9B4;
+        }
+        .perf::before, .perf::after {
+          content: ''; position: absolute; top: -9px; width: 18px; height: 18px; border-radius: 50%;
+          background: #1C1613;
+        }
+        .perf::before { left: -9px; }
+        .perf::after { right: -9px; }
+        .tline { display: flex; justify-content: space-between; font-size: 12.5px; padding: 4px 0; color: #4A3E32; }
+        .tline .tqty { font-family: 'JetBrains Mono', monospace; color: #8A7B6B; margin-right: 6px; }
+        .ttotal { display: flex; justify-content: space-between; font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 16px; margin-top: 10px; }
+        .tmeta { font-size: 11.5px; color: #8A7B6B; margin-top: 12px; line-height: 1.6; }
+
+        .trackwrap { margin-top: 26px; }
+        .coalbed {
+          height: 8px; border-radius: 8px; margin-top: 14px;
+          background: linear-gradient(90deg, #3A1D10, #1C0F09);
+          position: relative; overflow: hidden;
+        }
+        .coalbed::after {
+          content: ''; position: absolute; inset: 0;
+          background: radial-gradient(circle at 20% 50%, rgba(255,120,50,0.9) 0 3px, transparent 4px),
+                      radial-gradient(circle at 45% 50%, rgba(255,160,60,0.8) 0 2px, transparent 3px),
+                      radial-gradient(circle at 68% 50%, rgba(255,90,30,0.9) 0 3px, transparent 4px),
+                      radial-gradient(circle at 88% 50%, rgba(255,140,50,0.7) 0 2px, transparent 3px);
+          animation: ember 1.6s ease-in-out infinite alternate;
+        }
+        @keyframes ember { from { opacity: 0.55; } to { opacity: 1; } }
+        .statuses { display: flex; justify-content: space-between; margin-top: 14px; }
+        .statuses .st { display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 1; }
+        .statuses .sicon {
+          width: 34px; height: 34px; border-radius: 50%;
+          background: #2A211B; color: #6B5F54;
+          display: flex; align-items: center; justify-content: center;
+          border: 1.5px solid rgba(255,255,255,0.06);
+        }
+        .statuses .st.on .sicon { background: rgba(255,90,42,0.16); color: #FF8A5B; border-color: #FF5A2A; }
+        .statuses .st.on .sicon svg { filter: drop-shadow(0 0 6px rgba(255,90,42,0.7)); }
+        .statuses .slabel { font-size: 9.5px; color: #7C6E62; text-align: center; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+        .statuses .st.on .slabel { color: #F6EEE1; }
+        .homescroll { padding-top: calc(30px + env(safe-area-inset-top)); }
+        .confirmscroll { padding-top: calc(24px + env(safe-area-inset-top)); }
+
+        /* PROFILE */
+        .herotop { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+        .profilebtn {
+          width: 34px; height: 34px; border-radius: 10px;
+          background: rgba(255,255,255,0.06);
+          border: none; padding: 0; overflow: hidden;
+          display: flex; align-items: center; justify-content: center;
+          color: #F6EEE1; cursor: pointer; flex-shrink: 0;
+        }
+        .profilebtn img { width: 100%; height: 100%; object-fit: cover; }
+        .profilehead { display: flex; align-items: center; gap: 14px; padding: 6px 0 22px; }
+        .avatarbig {
+          width: 62px; height: 62px; border-radius: 16px;
+          background: linear-gradient(135deg,#3A2A1E,#201712);
+          display: flex; align-items: center; justify-content: center;
+          color: #FF8A5B; overflow: hidden; flex-shrink: 0;
+        }
+        .avatarbig img { width: 100%; height: 100%; object-fit: cover; }
+        .profilehead .pname3 { color: #F6EEE1; font-weight: 800; font-size: 17px; font-family: 'Oswald', sans-serif; }
+        .profilehead .puser { color: #8C8178; font-size: 12.5px; margin-top: 2px; }
+        .platchip {
+          display: inline-flex; align-items: center; gap: 5px;
+          margin-top: 8px; background: rgba(255,90,42,0.13); color: #FF8A5B;
+          font-size: 10.5px; font-weight: 700; padding: 4px 9px; border-radius: 20px;
+          text-transform: uppercase; letter-spacing: 0.03em;
+        }
+        .guesthint { background: #241C17; border-radius: 14px; padding: 13px 14px; color: #8C8178; font-size: 12px; line-height: 1.6; margin-bottom: 18px; }
+        .histcard { background: #241C17; border-radius: 14px; padding: 13px 14px; margin-bottom: 9px; }
+        .histcard .hrow { display: flex; justify-content: space-between; align-items: center; }
+        .histcard .hnum { font-family: 'JetBrains Mono', monospace; color: #F6EEE1; font-weight: 700; font-size: 12.5px; }
+        .histcard .hdate { color: #7C6E62; font-size: 11px; }
+        .histcard .hitems { color: #A79485; font-size: 12px; margin-top: 6px; line-height: 1.5; }
+        .histcard .hfoot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+        .histcard .htotal { font-family: 'Oswald', sans-serif; color: #FF8A5B; font-weight: 700; font-size: 14px; }
+        .histcard .hbadge { background: rgba(143,191,122,0.15); color: #8FBF7A; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px; text-transform: uppercase; }
+      `}</style>
+
+      <div className="frame">
+        {/* HOME */}
+        {step === "home" && (
+          <div className="scroll homescroll" ref={scrollRef}>
+            <div className="hero">
+              <div className="herotop">
+                <h1 className="brand"><Flame className="flameicon" size={30} />УГОЛЬКИ</h1>
+                <button className="profilebtn" onClick={() => { setProfileOrigin("home"); setStep("profile"); }}>
+                  {profileUser && profileUser.photo ? <img src={profileUser.photo} alt="" /> : <User size={16} />}
+                </button>
               </div>
-              <button class="product-row-chevron" data-action="toggleRow" data-id="${p.id}">+</button>
+              <div className="tag">шашлычная у дома · с пылу с жару за 20 минут</div>
+
+              <div className="segwrap">
+                <button className={`segbtn ${serviceType === "pickup" ? "active" : ""}`} onClick={() => setServiceType("pickup")}>
+                  <Store size={15} /> Самовывоз
+                </button>
+                <button className={`segbtn ${serviceType === "delivery" ? "active" : ""}`} onClick={() => setServiceType("delivery")}>
+                  <Truck size={15} /> Доставка
+                </button>
+              </div>
+
+              {serviceType === "pickup" ? (
+                <>
+                  <div className="sectionlabel">Выберите точку</div>
+                  {POINTS.map((p) => (
+                    <div key={p.id} className={`pointcard ${pointId === p.id ? "sel" : ""}`} onClick={() => setPointId(p.id)}>
+                      <div className="pin"><MapPin size={16} /></div>
+                      <div>
+                        <div className="pname">{p.name}</div>
+                        <div className="ptime">{p.time}</div>
+                      </div>
+                      <div className="radiodot">{pointId === p.id && <div className="inner" />}</div>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <div className="sectionlabel">Адрес доставки</div>
+                  <div className="addrbox">
+                    <input placeholder="Улица, дом, квартира" value={address} onChange={(e) => setAddress(e.target.value)} />
+                    <div className="hint"><Clock size={13} /> Доставка 35–50 минут · бесплатно от 1000 ₽</div>
+                  </div>
+                </>
+              )}
+
+              <div className="homecta">
+                <button
+                  className="primarybtn"
+                  disabled={serviceType === "delivery" && address.trim().length < 3}
+                  onClick={() => setStep("menu")}
+                >
+                  Выбрать блюда
+                </button>
+              </div>
             </div>
-            <div class="product-row-form ${openProductRowId === p.id ? 'open' : ''}" data-id="${p.id}">
-              <input type="number" id="qty-${p.id}" value="${p.basis==='per100' ? 100 : 1}">
-              <button data-action="addFromLibrary" data-id="${p.id}">Добавить</button>
+          </div>
+        )}
+
+        {/* MENU */}
+        {step === "menu" && (
+          <>
+            <div className="topbar">
+              {platform === "browser" && <button className="backbtn" onClick={goBack}><ChevronLeft size={18} /></button>}
+              <h1>Меню</h1>
+              {cartCount > 0 && (
+                <div className="cartchip" onClick={() => setStep("cart")}>
+                  <ShoppingBag size={13} /> {cartCount} · {money(subtotal)}
+                </div>
+              )}
+              <button className="profilebtn" onClick={() => { setProfileOrigin("menu"); setStep("profile"); }}>
+                {profileUser && profileUser.photo ? <img src={profileUser.photo} alt="" /> : <User size={16} />}
+              </button>
             </div>
-          </div>`;
-      });
-    }
-    html += `</div><button class="btn btn-secondary btn-block" data-action="newProduct" style="margin-top:8px;">+ Создать новый продукт</button>`;
-    el.innerHTML = html;
+            <div className="scroll" ref={scrollRef} style={{ paddingBottom: cartCount > 0 ? 90 : 18 }}>
+              <div className="cats">
+                {CATEGORIES.map((c) => (
+                  <button key={c} className={`catbtn ${activeCat === c ? "active" : ""}`} onClick={() => { haptic("select"); setActiveCat(c); }}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+              {ITEMS.filter((i) => i.cat === activeCat).map((item) => (
+                <div className="dishcard" key={item.id}>
+                  <div className="dishicon"><Flame size={22} /></div>
+                  <div className="dishinfo">
+                    <div className="dname">{item.name}</div>
+                    <div className="dmeta">{item.weight}{item.kcal ? ` · ${item.kcal}` : ""}</div>
+                    <div className="dprice">{money(item.price)}</div>
+                  </div>
+                  <button className="addbtn" onClick={() => openModal(item)}><Plus size={18} /></button>
+                </div>
+              ))}
+            </div>
+            {cartCount > 0 && (
+              <div className="floatbar" onClick={() => setStep("cart")}>
+                <div className="fbleft">
+                  <div className="badge">{cartCount}</div>
+                  <div className="flabel">В корзину</div>
+                </div>
+                <div className="fsum">{money(subtotal)}</div>
+              </div>
+            )}
+            {modalItem && (
+              <div className="modalbg" onClick={() => setModalItem(null)}>
+                <div className="sheet" onClick={(e) => e.stopPropagation()}>
+                  <div className="sheethead">
+                    <div>
+                      <h2>{modalItem.name}</h2>
+                    </div>
+                    <button className="xbtn" onClick={() => setModalItem(null)}><X size={20} /></button>
+                  </div>
+                  <div className="optlabel">Соус</div>
+                  <div className="optrow">
+                    {SAUCES.map((s) => (
+                      <div key={s} className={`optchip ${modalSauce === s ? "on" : ""}`} onClick={() => setModalSauce(s)}>{s}</div>
+                    ))}
+                  </div>
+                  <div className="optlabel">Острота</div>
+                  <div className="optrow">
+                    {SPICE.map((s) => (
+                      <div key={s} className={`optchip ${modalSpice === s ? "on" : ""}`} onClick={() => setModalSpice(s)}>{s}</div>
+                    ))}
+                  </div>
+                  <div className="qtyrow">
+                    <div className="qtystep">
+                      <button onClick={() => setModalQty((q) => Math.max(1, q - 1))}><Minus size={15} /></button>
+                      <span>{modalQty}</span>
+                      <button onClick={() => setModalQty((q) => q + 1)}><Plus size={15} /></button>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 18 }}>
+                    <button
+                      className="primarybtn"
+                      onClick={() => {
+                        addToCart(modalItem.id, modalItem.name, modalItem.price, modalQty, modalSauce, modalSpice);
+                        setModalItem(null);
+                      }}
+                    >
+                      Добавить за {money(modalItem.price * modalQty)}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
-    document.getElementById('librarySearch').addEventListener('input', (e) => {
-      libraryQuery = e.target.value;
-      renderLibraryPanel();
-      document.getElementById('librarySearch').focus();
-      const val = document.getElementById('librarySearch').value;
-      document.getElementById('librarySearch').setSelectionRange(val.length, val.length);
-    });
-  }
+        {/* CART */}
+        {step === "cart" && (
+          <>
+            <div className="topbar">
+              {platform === "browser" && <button className="backbtn" onClick={goBack}><ChevronLeft size={18} /></button>}
+              <h1>Корзина</h1>
+              <button className="profilebtn" onClick={() => { setProfileOrigin("cart"); setStep("profile"); }}>
+                {profileUser && profileUser.photo ? <img src={profileUser.photo} alt="" /> : <User size={16} />}
+              </button>
+            </div>
+            <div className="scroll" ref={scrollRef} style={{ paddingBottom: cart.length ? 100 : 18 }}>
+              {cart.length === 0 ? (
+                <div className="empty">
+                  <ShoppingBag size={40} />
+                  <div>Корзина пуста</div>
+                </div>
+              ) : (
+                <>
+                  {cart.map((l) => (
+                    <div className="cartline" key={l.lineId}>
+                      <div style={{ flex: 1 }}>
+                        <div className="cname">{l.name}</div>
+                        {l.sauce && <div className="cmods">{l.sauce} · {l.spice}</div>}
+                        <div className="cprice">{money(l.price * l.qty)}</div>
+                      </div>
+                      <div className="stepper">
+                        <button onClick={() => changeQty(l.lineId, -1)}><Minus size={13} /></button>
+                        <span>{l.qty}</span>
+                        <button onClick={() => changeQty(l.lineId, 1)}><Plus size={13} /></button>
+                      </div>
+                    </div>
+                  ))}
 
-  document.getElementById('libraryPanel').addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-action]');
-    if (!btn) return;
-    const action = btn.getAttribute('data-action');
-    const id = btn.getAttribute('data-id');
-    if (action === 'toggleRow') {
-      openProductRowId = openProductRowId === id ? null : id;
-      renderLibraryPanel();
-    } else if (action === 'newProduct') {
-      productFormPrefillBarcode = '';
-      openProductForm();
-    } else if (action === 'addFromLibrary') {
-      const p = products.find(pr => pr.id === id);
-      if (!p) return;
-      const qty = parseFloat(document.getElementById(`qty-${id}`).value) || 0;
-      if (qty <= 0) { haptic('notification','error'); return; }
-      let entry;
-      if (p.basis === 'per100') {
-        const f = qty/100;
-        entry = { id:newId(), meal:selectedMeal, name:p.name, weight:qty,
-          cal: round1(p.cal100*f), protein: round1(p.protein100*f), fat: round1(p.fat100*f), carb: round1(p.carb100*f) };
-      } else {
-        entry = { id:newId(), meal:selectedMeal, name:p.name, servings:qty,
-          cal: round1(p.calS*qty), protein: round1(p.proteinS*qty), fat: round1(p.fatS*qty), carb: round1(p.carbS*qty) };
-      }
-      await addEntry(entry);
-      closeAddOverlay();
-      haptic('notification','success');
-    }
-  });
+                  <div className="promorow">
+                    <input placeholder="Промокод" value={promo} onChange={(e) => setPromo(e.target.value)} />
+                    <button onClick={applyPromo}>Применить</button>
+                  </div>
+                  {promoApplied && <div className="promomsg ok">Промокод УГОЛЁК10 применён — скидка 10%</div>}
+                  {promoError && !promoApplied && <div className="promomsg err">{promoError}</div>}
 
-  // ---------- Create product form ----------
-  const productFormOverlay = document.getElementById('productFormOverlay');
-  let productFormBasis = 'per100';
+                  <div style={{ marginTop: 20 }}>
+                    <div className="sumrow"><span>Сумма заказа</span><span>{money(subtotal)}</span></div>
+                    {discount > 0 && <div className="sumrow"><span>Скидка</span><span className="neg">−{money(discount)}</span></div>}
+                    {serviceType === "delivery" && (
+                      <div className="sumrow"><span>Доставка</span><span>{deliveryFee === 0 ? "бесплатно" : money(deliveryFee)}</span></div>
+                    )}
+                    <div className="sumrow total"><span>Итого</span><span>{money(total)}</span></div>
+                  </div>
+                </>
+              )}
+            </div>
+            {cart.length > 0 && (
+              <div className="stickycta">
+                <button className="primarybtn" onClick={goCheckoutFromCart}>Оформить заказ</button>
+              </div>
+            )}
+          </>
+        )}
 
-  function openProductForm(){
-    document.getElementById('pName').value = '';
-    document.getElementById('pBarcode').value = productFormPrefillBarcode || '';
-    document.getElementById('pCal100').value = '';
-    document.getElementById('pProtein100').value = '';
-    document.getElementById('pFat100').value = '';
-    document.getElementById('pCarb100').value = '';
-    document.getElementById('pServingLabel').value = '';
-    document.getElementById('pCalS').value = '';
-    document.getElementById('pProteinS').value = '';
-    document.getElementById('pFatS').value = '';
-    document.getElementById('pCarbS').value = '';
-    setProductBasis('per100');
-    productFormOverlay.classList.add('open');
-  }
-  function closeProductForm(){ productFormOverlay.classList.remove('open'); }
-  document.getElementById('closeProductForm').addEventListener('click', closeProductForm);
-  productFormOverlay.addEventListener('click', (e) => { if (e.target === productFormOverlay) closeProductForm(); });
+        {/* CHECKOUT */}
+        {step === "checkout" && (
+          <>
+            <div className="topbar">
+              {platform === "browser" && <button className="backbtn" onClick={goBack}><ChevronLeft size={18} /></button>}
+              <h1>Оформление</h1>
+              <button className="profilebtn" onClick={() => { setProfileOrigin("checkout"); setStep("profile"); }}>
+                {profileUser && profileUser.photo ? <img src={profileUser.photo} alt="" /> : <User size={16} />}
+              </button>
+            </div>
+            <div className="scroll" ref={scrollRef} style={{ paddingBottom: 100 }}>
+              <div className="recapcard">
+                <div className="ricon">{serviceType === "pickup" ? <Store size={18} /> : <Truck size={18} />}</div>
+                <div>
+                  <div className="rtitle">{serviceType === "pickup" ? "Самовывоз" : "Доставка"}</div>
+                  <div className="rsub">{serviceType === "pickup" ? POINTS.find((p) => p.id === pointId)?.name : address}</div>
+                </div>
+              </div>
 
-  function setProductBasis(basis){
-    productFormBasis = basis;
-    document.querySelectorAll('#basisToggle .basis-chip').forEach(c => c.classList.toggle('active', c.getAttribute('data-basis') === basis));
-    document.getElementById('per100Fields').style.display = basis === 'per100' ? 'block' : 'none';
-    document.getElementById('perServingFields').style.display = basis === 'perServing' ? 'block' : 'none';
-  }
-  document.getElementById('basisToggle').addEventListener('click', (e) => {
-    const chip = e.target.closest('.basis-chip');
-    if (!chip) return;
-    setProductBasis(chip.getAttribute('data-basis'));
-  });
+              <div className="fieldlabel">Когда</div>
+              <div className="timechoice">
+                <button className={timing === "asap" ? "on" : ""} onClick={() => setTiming("asap")}>Как можно скорее</button>
+                <button className={timing === "later" ? "on" : ""} onClick={() => setTiming("later")}>Ко времени</button>
+              </div>
+              {timing === "later" && (
+                <div className="inputwrap" style={{ marginTop: 10 }}>
+                  <Clock size={16} />
+                  <input className="textinput" placeholder="Например, 19:30" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} />
+                </div>
+              )}
 
-  document.getElementById('saveProductForm').addEventListener('click', async () => {
-    const name = document.getElementById('pName').value.trim();
-    if (!name) { haptic('notification','error'); return; }
-    const barcode = document.getElementById('pBarcode').value.trim() || undefined;
-    let product;
-    if (productFormBasis === 'per100') {
-      product = { id:newId(), name, barcode, basis:'per100',
-        cal100: parseFloat(document.getElementById('pCal100').value) || 0,
-        protein100: parseFloat(document.getElementById('pProtein100').value) || 0,
-        fat100: parseFloat(document.getElementById('pFat100').value) || 0,
-        carb100: parseFloat(document.getElementById('pCarb100').value) || 0 };
-    } else {
-      product = { id:newId(), name, barcode, basis:'perServing',
-        servingLabel: document.getElementById('pServingLabel').value.trim() || '1 порция',
-        calS: parseFloat(document.getElementById('pCalS').value) || 0,
-        proteinS: parseFloat(document.getElementById('pProteinS').value) || 0,
-        fatS: parseFloat(document.getElementById('pFatS').value) || 0,
-        carbS: parseFloat(document.getElementById('pCarbS').value) || 0 };
-    }
-    products.push(product);
-    await saveProducts();
-    closeProductForm();
-    haptic('notification','success');
-    libraryQuery = product.name;
-    switchAddTab('library');
-  });
+              <div className="fieldlabel">Имя</div>
+              <div className="inputwrap">
+                <User size={16} />
+                <input className="textinput" placeholder="Как к вам обращаться" value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
+              </div>
 
-  // ---------- Goals sheet ----------
-  const goalsOverlay = document.getElementById('goalsOverlay');
-  document.getElementById('openGoals').addEventListener('click', () => goalsOverlay.classList.add('open'));
-  document.getElementById('closeGoals').addEventListener('click', () => goalsOverlay.classList.remove('open'));
-  goalsOverlay.addEventListener('click', (e) => { if (e.target === goalsOverlay) goalsOverlay.classList.remove('open'); });
+              <div className="fieldlabel">Телефон</div>
+              <div className="inputwrap">
+                <Phone size={16} />
+                <input className="textinput" placeholder="+7 ___ ___-__-__" value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} />
+              </div>
 
-  document.getElementById('goalsModeToggle').addEventListener('click', (e) => {
-    const chip = e.target.closest('.basis-chip');
-    if (!chip) return;
-    const mode = chip.getAttribute('data-mode');
-    if (mode === 'percent') {
-      // carry current grams over into the percent view for continuity
-      const cal = parseFloat(document.getElementById('gCal').value) || 1;
-      const p = parseFloat(document.getElementById('gProtein').value) || 0;
-      const f = parseFloat(document.getElementById('gFat').value) || 0;
-      const c = parseFloat(document.getElementById('gCarb').value) || 0;
-      document.getElementById('gProteinPct').value = Math.round(p*4/cal*100);
-      document.getElementById('gFatPct').value = Math.round(f*9/cal*100);
-      document.getElementById('gCarbPct').value = Math.round(c*4/cal*100);
-    } else {
-      // carry current percent split back into grams for continuity
-      const cal = parseFloat(document.getElementById('gCal').value) || 0;
-      const p = parseFloat(document.getElementById('gProteinPct').value) || 0;
-      const f = parseFloat(document.getElementById('gFatPct').value) || 0;
-      const c = parseFloat(document.getElementById('gCarbPct').value) || 0;
-      document.getElementById('gProtein').value = round1(cal*p/100/4);
-      document.getElementById('gFat').value = round1(cal*f/100/9);
-      document.getElementById('gCarb').value = round1(cal*c/100/4);
-    }
-    setGoalsMode(mode);
-  });
+              <div className="fieldlabel">Комментарий (необязательно)</div>
+              <div className="inputwrap">
+                <MessageSquare size={16} />
+                <input className="textinput" placeholder="Например, позвонить за 5 минут" value={customer.comment} onChange={(e) => setCustomer({ ...customer, comment: e.target.value })} />
+              </div>
+            </div>
+            <div className="stickycta">
+              <button
+                className="primarybtn"
+                disabled={customer.name.trim().length < 2 || customer.phone.trim().length < 5}
+                onClick={() => setStep("payment")}
+              >
+                К оплате · {money(total)}
+              </button>
+            </div>
+          </>
+        )}
 
-  document.getElementById('presetRow').addEventListener('click', (e) => {
-    const chip = e.target.closest('.preset-chip');
-    if (!chip) return;
-    document.getElementById('gProteinPct').value = chip.getAttribute('data-p');
-    document.getElementById('gFatPct').value = chip.getAttribute('data-f');
-    document.getElementById('gCarbPct').value = chip.getAttribute('data-c');
-    updatePctPreview();
-  });
+        {/* PAYMENT */}
+        {step === "payment" && (
+          <>
+            <div className="topbar">
+              {platform === "browser" && <button className="backbtn" onClick={goBack}><ChevronLeft size={18} /></button>}
+              <h1>Оплата</h1>
+              <button className="profilebtn" onClick={() => { setProfileOrigin("payment"); setStep("profile"); }}>
+                {profileUser && profileUser.photo ? <img src={profileUser.photo} alt="" /> : <User size={16} />}
+              </button>
+            </div>
+            <div className="scroll" ref={scrollRef} style={{ paddingBottom: 100 }}>
+              <div className="sectionlabel">Способ оплаты</div>
+              <div className={`paycard ${payMethod === "card" ? "sel" : ""}`} onClick={() => setPayMethod("card")}>
+                <div className="picn"><CreditCard size={18} /></div>
+                <div><div className="pname2">Картой онлайн</div><div className="psub">Visa, Mastercard, Мир</div></div>
+                <div className="radiodot" style={{ marginLeft: "auto" }}>{payMethod === "card" && <div className="inner" />}</div>
+              </div>
+              <div className={`paycard ${payMethod === "sbp" ? "sel" : ""}`} onClick={() => setPayMethod("sbp")}>
+                <div className="picn"><QrCode size={18} /></div>
+                <div><div className="pname2">СБП</div><div className="psub">Оплата по QR-коду</div></div>
+                <div className="radiodot" style={{ marginLeft: "auto" }}>{payMethod === "sbp" && <div className="inner" />}</div>
+              </div>
+              <div className={`paycard ${payMethod === "cash" ? "sel" : ""}`} onClick={() => setPayMethod("cash")}>
+                <div className="picn"><Banknote size={18} /></div>
+                <div><div className="pname2">При получении</div><div className="psub">Наличными или картой курьеру</div></div>
+                <div className="radiodot" style={{ marginLeft: "auto" }}>{payMethod === "cash" && <div className="inner" />}</div>
+              </div>
 
-  ['gCal','gProteinPct','gFatPct','gCarbPct'].forEach(id => {
-    document.getElementById(id).addEventListener('input', () => { if (goalsMode === 'percent') updatePctPreview(); });
-  });
+              <div className="paytotalbar">
+                <div>
+                  <div className="ptl">К оплате</div>
+                  <div className="ptv">{money(total)}</div>
+                </div>
+                <Ticket size={26} color="#5A4E44" />
+              </div>
+            </div>
+            <div className="stickycta">
+              <button className="primarybtn" onClick={submitPayment} disabled={paying}>
+                {paying ? <span className="spinner" /> : (payMethod === "cash" ? "Подтвердить заказ" : `Оплатить ${money(total)}`)}
+              </button>
+            </div>
+          </>
+        )}
 
-  document.getElementById('saveGoals').addEventListener('click', async () => {
-    const cal = parseFloat(document.getElementById('gCal').value) || DEFAULT_GOALS.cal;
-    if (goalsMode === 'percent') {
-      const proteinPct = parseFloat(document.getElementById('gProteinPct').value) || 0;
-      const fatPct = parseFloat(document.getElementById('gFatPct').value) || 0;
-      const carbPct = parseFloat(document.getElementById('gCarbPct').value) || 0;
-      goals = {
-        cal, mode:'percent', proteinPct, fatPct, carbPct,
-        protein: round1(cal*proteinPct/100/4),
-        fat: round1(cal*fatPct/100/9),
-        carb: round1(cal*carbPct/100/4),
-      };
-    } else {
-      goals = {
-        cal,
-        protein: parseFloat(document.getElementById('gProtein').value) || DEFAULT_GOALS.protein,
-        fat: parseFloat(document.getElementById('gFat').value) || DEFAULT_GOALS.fat,
-        carb: parseFloat(document.getElementById('gCarb').value) || DEFAULT_GOALS.carb,
-        mode:'grams',
-        proteinPct: goals.proteinPct, fatPct: goals.fatPct, carbPct: goals.carbPct,
-      };
-    }
-    await storage.set('goals', JSON.stringify(goals));
-    goalsOverlay.classList.remove('open');
-    render();
-    haptic('notification','success');
-  });
+        {/* PROFILE */}
+        {step === "profile" && (
+          <>
+            <div className="topbar">
+              {platform === "browser" && <button className="backbtn" onClick={goBack}><ChevronLeft size={18} /></button>}
+              <h1>Профиль</h1>
+            </div>
+            <div className="scroll" ref={scrollRef} style={{ paddingBottom: 18 }}>
+              <div className="profilehead">
+                <div className="avatarbig">
+                  {profileUser && profileUser.photo ? <img src={profileUser.photo} alt="" /> : <User size={26} />}
+                </div>
+                <div>
+                  <div className="pname3">
+                    {profileUser ? [profileUser.firstName, profileUser.lastName].filter(Boolean).join(" ") : "Гость"}
+                  </div>
+                  {profileUser && profileUser.username && <div className="puser">@{profileUser.username}</div>}
+                  <div className="platchip">
+                    {platform === "telegram" ? "Telegram" : platform === "max" ? "MAX" : "Без привязки"}
+                  </div>
+                </div>
+              </div>
 
-  // ---------- Calorie calculator ----------
-  const calcOverlay = document.getElementById('calcOverlay');
-  let calcSex = 'f';
-  let calcActivity = 1.2;
-  let calcGoal = 'maintain';
+              {!profileUser && (
+                <div className="guesthint">
+                  Откройте мини-апп из Telegram или MAX — тогда сюда подтянутся имя и фото профиля, а история заказов сохранится за вашим аккаунтом.
+                </div>
+              )}
 
-  document.getElementById('openCalc').addEventListener('click', () => calcOverlay.classList.add('open'));
-  document.getElementById('closeCalc').addEventListener('click', () => calcOverlay.classList.remove('open'));
-  calcOverlay.addEventListener('click', (e) => { if (e.target === calcOverlay) calcOverlay.classList.remove('open'); });
+              <div className="sectionlabel">История заказов</div>
+              {orderHistory.length === 0 ? (
+                <div className="empty">
+                  <Ticket size={36} />
+                  <div>Пока нет заказов</div>
+                </div>
+              ) : (
+                orderHistory.map((h) => (
+                  <div className="histcard" key={h.num}>
+                    <div className="hrow">
+                      <span className="hnum">№ {h.num}</span>
+                      <span className="hdate">
+                        {new Date(h.date).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                    <div className="hitems">{h.items.map((l) => `${l.qty}× ${l.name}`).join(", ")}</div>
+                    <div className="hfoot">
+                      <span className="htotal">{money(h.total)}</span>
+                      <span className="hbadge">{h.serviceType === "pickup" ? "Самовывоз" : "Доставка"}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
 
-  document.getElementById('calcSexToggle').addEventListener('click', (e) => {
-    const chip = e.target.closest('.basis-chip');
-    if (!chip) return;
-    calcSex = chip.getAttribute('data-sex');
-    document.querySelectorAll('#calcSexToggle .basis-chip').forEach(c => c.classList.toggle('active', c === chip));
-  });
+        {/* CONFIRM */}
+        {step === "confirm" && order && (
+          <div className="scroll confirmscroll" ref={scrollRef}>
+            <div className="confirmwrap">
+              <div className="ticket">
+                <div className="thead">
+                  <div className="flamewrap"><Flame color="#FF5A2A" size={26} /></div>
+                  <h2>Заказ принят!</h2>
+                  <div className="tnum">№ {order.num}</div>
+                </div>
+                <div className="perf" />
+                {order.items.map((l) => (
+                  <div className="tline" key={l.lineId}>
+                    <span><span className="tqty">{l.qty}×</span>{l.name}</span>
+                    <span>{money(l.price * l.qty)}</span>
+                  </div>
+                ))}
+                <div className="ttotal"><span>Итого</span><span>{money(order.total)}</span></div>
+                <div className="tmeta">
+                  {order.serviceType === "pickup"
+                    ? `Самовывоз · ${order.point?.name}`
+                    : `Доставка · ${order.address}`}
+                  <br />
+                  {order.timing === "asap" ? "Как можно скорее" : `Ко времени: ${order.scheduledTime || "—"}`}
+                  <br />
+                  {order.customer.name}, {order.customer.phone}
+                </div>
+              </div>
 
-  document.getElementById('activityList').addEventListener('click', (e) => {
-    const row = e.target.closest('.activity-row');
-    if (!row) return;
-    calcActivity = parseFloat(row.getAttribute('data-factor'));
-    document.querySelectorAll('#activityList .activity-row').forEach(r => r.classList.toggle('active', r === row));
-  });
+              <div className="trackwrap">
+                <div className="sectionlabel" style={{ margin: "0 0 4px" }}>Статус заказа</div>
+                <div className="statuses">
+                  {statuses.map((s, i) => (
+                    <div className={`st ${i <= statusIdx ? "on" : ""}`} key={s}>
+                      <div className="sicon">{i < statusIdx ? <Check size={15} /> : <Flame size={15} />}</div>
+                      <div className="slabel">{s}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="coalbed" />
+              </div>
 
-  document.getElementById('calcGoalToggle').addEventListener('click', (e) => {
-    const chip = e.target.closest('.basis-chip');
-    if (!chip) return;
-    calcGoal = chip.getAttribute('data-goal');
-    document.querySelectorAll('#calcGoalToggle .basis-chip').forEach(c => c.classList.toggle('active', c === chip));
-  });
+              <div style={{ marginTop: 26 }}>
+                <button className="secondarybtn" onClick={newOrder}>Новый заказ</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
-  const GOAL_ADJUST = { loss: 0.8, maintain: 1, gain: 1.15 };
-  const GOAL_SPLIT = {
-    loss: { p: 35, f: 30, c: 35 },
-    maintain: { p: 30, f: 30, c: 40 },
-    gain: { p: 25, f: 25, c: 50 },
-  };
-  const GOAL_LABEL = { loss: 'похудения', maintain: 'поддержания веса', gain: 'набора массы' };
+createRoot(document.getElementById("root")).render(<App />);
 
-  document.getElementById('runCalc').addEventListener('click', () => {
-    const age = parseFloat(document.getElementById('cAge').value);
-    const height = parseFloat(document.getElementById('cHeight').value);
-    const weight = parseFloat(document.getElementById('cWeight').value);
-    if (!age || !height || !weight) { haptic('notification','error'); return; }
-
-    const bmr = calcSex === 'm'
-      ? 10*weight + 6.25*height - 5*age + 5
-      : 10*weight + 6.25*height - 5*age - 161;
-    const tdee = bmr * calcActivity;
-    let target = Math.round((tdee * GOAL_ADJUST[calcGoal]) / 10) * 10;
-
-    const minCal = calcSex === 'm' ? 1500 : 1200;
-    let clamped = false;
-    if (target < minCal) { target = minCal; clamped = true; }
-
-    const split = GOAL_SPLIT[calcGoal];
-    const pG = Math.round(target * split.p/100/4);
-    const fG = Math.round(target * split.f/100/9);
-    const cG = Math.round(target * split.c/100/4);
-
-    const resultEl = document.getElementById('calcResult');
-    resultEl.style.display = 'block';
-    resultEl.innerHTML = `
-      <div class="calc-result-card">
-        <div class="calc-result-cal">${target} <span class="unit">ккал/день</span></div>
-        <div class="calc-result-sub">Норма для ${GOAL_LABEL[calcGoal]} · базовый обмен ${Math.round(bmr)} ккал</div>
-        <div class="calc-result-macros">
-          <div class="calc-result-macro"><div class="val">${pG} г</div><div class="lbl">Белки</div></div>
-          <div class="calc-result-macro"><div class="val">${fG} г</div><div class="lbl">Жиры</div></div>
-          <div class="calc-result-macro"><div class="val">${cG} г</div><div class="lbl">Углеводы</div></div>
-        </div>
-        ${clamped ? `<div class="calc-warn">Значение поднято до безопасного минимума ${minCal} ккал</div>` : ''}
-        <button class="btn btn-primary btn-block" id="applyCalc" style="margin-top:14px;">Применить к норме</button>
-      </div>`;
-
-    document.getElementById('applyCalc').addEventListener('click', () => {
-      document.getElementById('gCal').value = target;
-      document.getElementById('gProteinPct').value = split.p;
-      document.getElementById('gFatPct').value = split.f;
-      document.getElementById('gCarbPct').value = split.c;
-      setGoalsMode('percent');
-      calcOverlay.classList.remove('open');
-      haptic('notification','success');
-    });
-  });
-
-  // ---------- Weight tracker (weight.js) ----------
-  if (window.WeightTracker) {
-    window.WeightTracker.init({ storage, haptic, escapeHtml, round1 });
-    document.getElementById('openWeight').addEventListener('click', () => window.WeightTracker.open());
-  }
-
-  // ---------- Init ----------
-  (async () => {
-    await loadGoals();
-    await loadProducts();
-    await loadDay();
-    buildScanPanelDOM();
-    renderScanPanel();
-  })();
-})();
 </script>
 </body>
 </html>
