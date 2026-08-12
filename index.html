@@ -1,1319 +1,716 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#1C1613" />
-<title>УГОЛЬКИ — мини-апп</title>
-
-<!-- Platform bridges: harmless outside Telegram/MAX, required inside them -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>西安 · Путеводитель</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="https://st.max.ru/js/max-web-app.js"></script>
-
-<!-- In-browser JSX transform so this can run with zero build step on GitHub Pages -->
-<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
-
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  html, body { margin: 0; padding: 0; background: #14100D; }
+  :root{
+    --ink:#14151f;
+    --ink-2:#1c1e2c;
+    --panel:#242739;
+    --panel-2:#2c2f45;
+    --line:#3a3d54;
+    --parchment:#efe4cb;
+    --gold:#dda749;
+    --gold-dim:#8c7038;
+    --clay:#c1662f;
+    --seal:#af322c;
+    --jade:#7fa085;
+    --sky:#5c8fae;
+    --text:#f1ecdd;
+    --muted:#9498ae;
+    --muted-2:#6f7389;
+    --font-display:'Noto Serif SC', serif;
+    --font-body:'Manrope', sans-serif;
+    --font-mono:'IBM Plex Mono', monospace;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; background:var(--ink); color:var(--text); font-family:var(--font-body); overflow-x:hidden;}
+  body{
+    padding-top:var(--safe-top);
+    padding-bottom:calc(72px + var(--safe-bottom));
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(221,167,73,0.10), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 0%, rgba(175,50,44,0.12), transparent 55%),
+      var(--ink);
+    min-height:100vh;
+  }
+  ::-webkit-scrollbar{display:none;}
+  button{font-family:inherit;}
+  a{color:inherit;}
+  .wrap{max-width:560px; margin:0 auto; padding:0 16px;}
+
+  /* ---------- HERO ---------- */
+  .hero{position:relative; padding:26px 16px 22px; overflow:hidden;}
+  .hero::before{
+    content:"";
+    position:absolute; inset:0;
+    background:linear-gradient(180deg, rgba(221,167,73,0.08), transparent 70%);
+    pointer-events:none;
+  }
+  .hero-top{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; max-width:560px; margin:0 auto;}
+  .hero-eyebrow{font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 6px;}
+  .hero-title{font-family:var(--font-display); font-weight:900; font-size:34px; line-height:1.05; margin:0; color:var(--text);}
+  .hero-title em{font-style:normal; color:var(--gold);}
+  .hero-sub{font-size:13.5px; color:var(--muted); margin-top:8px; line-height:1.5;}
+  .seal{
+    flex:0 0 auto; width:58px; height:58px; border-radius:50%;
+    border:2.5px solid var(--seal); color:var(--seal);
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-display); font-weight:700; font-size:20px;
+    transform:rotate(-9deg);
+    box-shadow: inset 0 0 0 3px rgba(175,50,44,0.15);
+    opacity:.92;
+    user-select:none;
+  }
+
+  .countdown-row{display:flex; gap:8px; margin-top:18px; max-width:560px; margin-left:auto; margin-right:auto;}
+  .cd-chip{flex:1; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:10px 6px; text-align:center;}
+  .cd-num{font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--gold);}
+  .cd-label{font-size:10px; color:var(--muted-2); margin-top:2px; letter-spacing:.03em;}
+
+  /* ---------- TABS ---------- */
+  .tabbar{
+    position:fixed; left:0; right:0; bottom:0; z-index:40;
+    background:rgba(20,21,31,0.92); backdrop-filter:blur(14px);
+    border-top:1px solid var(--line);
+    padding-bottom:var(--safe-bottom);
+  }
+  .tabbar-inner{max-width:560px; margin:0 auto; display:flex;}
+  .tab-btn{
+    flex:1; background:none; border:none; color:var(--muted-2); padding:10px 4px 8px;
+    display:flex; flex-direction:column; align-items:center; gap:4px; font-size:10.5px; letter-spacing:.02em;
+    cursor:pointer;
+  }
+  .tab-btn .ic{font-size:19px; line-height:1;}
+  .tab-btn.active{color:var(--gold);}
+
+  .view{display:none; padding:6px 0 24px;}
+  .view.active{display:block; animation:fadein .25s ease;}
+  @keyframes fadein{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
+
+  /* ---------- SECTION HEADERS ---------- */
+  .section-title{
+    font-family:var(--font-display); font-weight:700; font-size:16.5px; color:var(--parchment);
+    margin:22px 0 12px; display:flex; align-items:center; gap:8px;
+  }
+  .section-title .dot{width:6px; height:6px; border-radius:50%; background:var(--clay);}
+  .section-note{font-size:12.5px; color:var(--muted); margin:-6px 0 14px; line-height:1.5;}
+
+  /* ---------- BUDGET DIAL ---------- */
+  .dial-card{
+    background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:20px;
+    display:flex; align-items:center; gap:18px; margin-top:14px;
+  }
+  .dial{position:relative; width:104px; height:104px; flex:0 0 auto;}
+  .dial svg{width:100%; height:100%; transform:rotate(-90deg);}
+  .dial-center{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;}
+  .dial-pct{font-family:var(--font-mono); font-size:18px; font-weight:600; color:var(--gold);}
+  .dial-pct-label{font-size:8.5px; color:var(--muted-2); letter-spacing:.05em;}
+  .dial-info{flex:1;}
+  .dial-info-row{display:flex; justify-content:space-between; font-size:12.5px; padding:4px 0; border-bottom:1px dashed var(--line);}
+  .dial-info-row:last-child{border-bottom:none;}
+  .dial-info-row .k{color:var(--muted);}
+  .dial-info-row .v{font-family:var(--font-mono); color:var(--text); font-weight:600;}
+  .dial-info-row .v.pos{color:var(--jade);}
+  .dial-info-row .v.neg{color:var(--seal);}
+
+  .reset-link{display:block; text-align:center; font-size:11px; color:var(--muted-2); margin-top:16px; text-decoration:underline; cursor:pointer;}
+
+  /* ---------- CATEGORY BARS ---------- */
+  .cat-card{background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:16px; margin-top:6px;}
+  .cat-row{margin-bottom:14px;}
+  .cat-row:last-child{margin-bottom:0;}
+  .cat-row-top{display:flex; justify-content:space-between; align-items:baseline; font-size:12.5px; margin-bottom:6px;}
+  .cat-row-top .cat-label{color:var(--text); display:flex; align-items:center; gap:6px;}
+  .cat-row-top .cat-val{font-family:var(--font-mono); color:var(--muted);}
+  .cat-row-top .cat-val b{color:var(--gold); font-weight:600;}
+  .cat-bar-track{height:7px; border-radius:5px; background:var(--panel-2); overflow:hidden;}
+  .cat-bar-fill{height:100%; border-radius:5px; transition:width .3s ease;}
+  .cat-bar-fill.over{background:var(--seal) !important;}
+
+  /* ---------- ENVELOPE TABLE ---------- */
+  .env-table{background:var(--panel); border:1px solid var(--line); border-radius:16px; overflow:hidden; margin-top:6px;}
+  .env-row{display:flex; justify-content:space-between; align-items:center; padding:12px 16px; font-size:13.5px; border-bottom:1px solid var(--line);}
+  .env-row:last-child{border-bottom:none;}
+  .env-row.total{background:var(--panel-2);}
+  .env-row .k{display:flex; align-items:center; gap:8px; color:var(--text);}
+  .env-row .v{font-family:var(--font-mono); font-weight:600; color:var(--gold);}
+  .env-row.total .v{color:var(--parchment); font-size:15px;}
+
+  .banner{
+    display:flex; gap:10px; align-items:flex-start; background:rgba(175,50,44,0.13);
+    border:1px solid rgba(175,50,44,0.4); border-radius:14px; padding:12px 14px; margin-top:16px; font-size:12.5px; color:var(--parchment); line-height:1.5;
+  }
+  .banner .ic{font-size:16px;}
+  .banner b{color:var(--gold);}
+
+  /* ---------- DAY CARDS ---------- */
+  .day-card{
+    background:var(--panel); border:1px solid var(--line); border-radius:18px; margin-bottom:12px; overflow:hidden;
+    transition:border-color .2s;
+  }
+  .day-card.done{border-color:var(--jade);}
+  .day-head{display:flex; align-items:center; gap:12px; padding:14px 14px; cursor:pointer;}
+  .day-date{
+    flex:0 0 auto; width:46px; height:46px; border-radius:12px; background:var(--panel-2);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:var(--font-mono);
+  }
+  .day-date .d{font-size:15px; font-weight:600; color:var(--parchment); line-height:1;}
+  .day-date .m{font-size:8.5px; color:var(--muted-2); text-transform:uppercase; margin-top:2px;}
+  .day-body{flex:1; min-width:0;}
+  .day-emoji{font-size:13px; margin-right:4px;}
+  .day-title{font-family:var(--font-display); font-weight:700; font-size:14.5px; color:var(--text);}
+  .day-sub{font-size:11px; color:var(--muted-2); margin-top:2px;}
+  .day-limit{flex:0 0 auto; text-align:right; font-family:var(--font-mono); font-size:12.5px; color:var(--gold); font-weight:600;}
+  .day-limit .lbl{display:block; font-size:8.5px; color:var(--muted-2); font-family:var(--font-body); font-weight:500;}
+  .chev{flex:0 0 auto; color:var(--muted-2); font-size:12px; transition:transform .25s;}
+  .day-card.open .chev{transform:rotate(180deg);}
+
+  .day-detail{max-height:0; overflow:hidden; transition:max-height .35s ease;}
+  .day-card.open .day-detail{max-height:1200px;}
+  .day-detail-inner{padding:0 16px 16px;}
+  .timeline{border-top:1px solid var(--line); padding-top:12px; margin-top:2px;}
+  .tl-row{padding:7px 0;}
+  .tl-top{display:flex; gap:10px; font-size:12.5px; line-height:1.5;}
+  .tl-time{flex:0 0 58px; font-family:var(--font-mono); color:var(--clay); font-weight:600; font-size:11.5px; padding-top:1px;}
+  .tl-text{color:var(--text);}
+  .tl-pois{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 0 68px;}
+  .poi-btn{
+    display:inline-flex; align-items:center; gap:4px; background:var(--panel-2); border:1px solid var(--line);
+    color:var(--sky); font-size:10.5px; padding:4px 9px; border-radius:20px; text-decoration:none; font-weight:600;
+  }
+  .poi-btn:active{background:var(--line);}
+  .day-note{
+    font-size:11.5px; color:var(--muted); background:rgba(221,167,73,0.08); border-left:2px solid var(--gold);
+    padding:8px 10px; border-radius:0 8px 8px 0; margin-top:10px; line-height:1.5;
+  }
+
+  .day-money{margin-top:14px; padding-top:12px; border-top:1px dashed var(--line);}
+  .day-money-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}
+  .day-money-head .lbl{font-size:9.5px; color:var(--muted-2); letter-spacing:.04em; text-transform:uppercase;}
+  .day-money-head .sum{font-family:var(--font-mono); font-size:13px; color:var(--parchment); font-weight:600;}
+  .cat-inputs{display:flex; gap:8px;}
+  .money-field{flex:1;}
+  .money-field label{display:flex; align-items:center; gap:3px; font-size:9.5px; color:var(--muted-2); letter-spacing:.02em; margin-bottom:4px;}
+  .money-field input{
+    width:100%; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; color:var(--parchment);
+    font-family:var(--font-mono); font-size:13px; padding:8px 6px; outline:none; text-align:center;
+  }
+  .money-field input:focus{border-color:var(--gold);}
+  .stamp-row{display:flex; align-items:center; justify-content:flex-end; margin-top:10px;}
+  .stamp-btn{
+    flex:0 0 auto; padding:0 14px; height:36px; border-radius:20px; border:2px solid var(--seal); background:none;
+    color:var(--seal); font-size:12.5px; font-weight:700; display:flex; align-items:center; gap:6px; cursor:pointer;
+    transition:all .2s;
+  }
+  .stamp-btn.on{background:var(--seal); color:var(--ink);}
+
+  /* ---------- CHECKLIST ---------- */
+  .check-item{
+    display:flex; align-items:center; gap:12px; background:var(--panel); border:1px solid var(--line);
+    border-radius:14px; padding:13px 14px; margin-bottom:9px; cursor:pointer;
+  }
+  .check-box{
+    flex:0 0 auto; width:22px; height:22px; border-radius:6px; border:2px solid var(--muted-2);
+    display:flex; align-items:center; justify-content:center; font-size:12px; color:transparent; transition:all .15s;
+  }
+  .check-item.on .check-box{background:var(--jade); border-color:var(--jade); color:var(--ink);}
+  .check-text{font-size:13px; color:var(--text); line-height:1.4;}
+  .check-item.on .check-text{color:var(--muted-2); text-decoration:line-through;}
+  .check-sub{font-size:11px; color:var(--muted-2); margin-top:2px;}
+
+  .foot-note{text-align:center; font-size:10.5px; color:var(--muted-2); margin-top:26px; line-height:1.6; padding:0 20px;}
 </style>
 </head>
 <body>
-<div id="root"></div>
-<script type="text/babel" data-type="module" data-presets="react">
-import React, { useState, useEffect, useRef } from "https://esm.sh/react@18.2.0";
-import { createRoot } from "https://esm.sh/react-dom@18.2.0/client?deps=react@18.2.0";
-import { Flame, ShoppingBag, Plus, Minus, MapPin, Clock, ChevronLeft, Check, CreditCard, QrCode, Banknote, X, Truck, Store, Phone, User, MessageSquare, Ticket } from "https://esm.sh/lucide-react@0.383.0?deps=react@18.2.0";
 
-const POINTS = [
-  { id: "p1", name: "ул. Ленина, 24", time: "готово через ~15 мин" },
-  { id: "p2", name: "пр. Мира, 87", time: "готово через ~20 мин" },
-  { id: "p3", name: "ул. Гагарина, 5", time: "готово через ~18 мин" },
-];
-
-const CATEGORIES = ["Шашлык", "Гарниры", "Соусы", "Напитки"];
-
-const ITEMS = [
-  { id: "sh1", cat: "Шашлык", name: "Шашлык из свиной шеи", weight: "300 г", kcal: "560 ккал", price: 420, mods: true },
-  { id: "sh2", cat: "Шашлык", name: "Шашлык из куриного бедра", weight: "300 г", kcal: "410 ккал", price: 350, mods: true },
-  { id: "sh3", cat: "Шашлык", name: "Шашлык из баранины", weight: "300 г", kcal: "520 ккал", price: 490, mods: true },
-  { id: "sh4", cat: "Шашлык", name: "Люля-кебаб говяжий", weight: "250 г", kcal: "480 ккал", price: 380, mods: true },
-  { id: "gr1", cat: "Гарниры", name: "Картофель по-деревенски", weight: "200 г", kcal: "260 ккал", price: 180, mods: false },
-  { id: "gr2", cat: "Гарниры", name: "Овощи гриль", weight: "200 г", kcal: "140 ккал", price: 220, mods: false },
-  { id: "gr3", cat: "Гарниры", name: "Рис с овощами", weight: "200 г", kcal: "310 ккал", price: 150, mods: false },
-  { id: "so1", cat: "Соусы", name: "Чесночный соус", weight: "50 г", kcal: "", price: 45, mods: false },
-  { id: "so2", cat: "Соусы", name: "Ткемали", weight: "50 г", kcal: "", price: 45, mods: false },
-  { id: "so3", cat: "Соусы", name: "Барбекю", weight: "50 г", kcal: "", price: 45, mods: false },
-  { id: "dr1", cat: "Напитки", name: "Домашний лимонад", weight: "0.5 л", kcal: "", price: 150, mods: false },
-  { id: "dr2", cat: "Напитки", name: "Морс ягодный", weight: "0.5 л", kcal: "", price: 130, mods: false },
-  { id: "dr3", cat: "Напитки", name: "Кола", weight: "0.5 л", kcal: "", price: 120, mods: false },
-];
-
-const SAUCES = ["Без соуса", "Чесночный", "Аджика", "Барбекю"];
-const SPICE = ["Обычный", "Острый"];
-
-const STEPS = ["home", "menu", "cart", "checkout", "payment"];
-const STEP_LABELS = { home: "Начало", menu: "Меню", cart: "Корзина", checkout: "Оформление", payment: "Оплата" };
-
-function money(n) {
-  return n.toLocaleString("ru-RU") + " ₽";
-}
-
-export default function App() {
-  const [step, setStep] = useState("home");
-  const [serviceType, setServiceType] = useState("pickup");
-  const [pointId, setPointId] = useState(POINTS[0].id);
-  const [address, setAddress] = useState("");
-  const [timing, setTiming] = useState("asap");
-  const [scheduledTime, setScheduledTime] = useState("");
-  const [activeCat, setActiveCat] = useState("Шашлык");
-  const [cart, setCart] = useState([]);
-  const [modalItem, setModalItem] = useState(null);
-  const [modalSauce, setModalSauce] = useState(SAUCES[0]);
-  const [modalSpice, setModalSpice] = useState(SPICE[0]);
-  const [modalQty, setModalQty] = useState(1);
-  const [promo, setPromo] = useState("");
-  const [promoApplied, setPromoApplied] = useState(false);
-  const [promoError, setPromoError] = useState("");
-  const [customer, setCustomer] = useState({ name: "", phone: "", comment: "" });
-  const [payMethod, setPayMethod] = useState("card");
-  const [paying, setPaying] = useState(false);
-  const [order, setOrder] = useState(null);
-  const [statusIdx, setStatusIdx] = useState(0);
-  const scrollRef = useRef(null);
-  const [platform, setPlatform] = useState("browser"); // "telegram" | "max" | "browser"
-  const [appHeight, setAppHeight] = useState(typeof window !== "undefined" ? window.innerHeight : 800);
-  const [profileUser, setProfileUser] = useState(null); // { id, firstName, lastName, username, photo, source }
-  const [profileOrigin, setProfileOrigin] = useState("home");
-  const [orderHistory, setOrderHistory] = useState([]);
-
-  // Detect host platform and initialize its bridge. In production, host index.html
-  // should include both SDK tags in <head>:
-  //   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  //   <script src="https://st.max.ru/js/max-web-app.js"></script>
-  // These fallback injections just make the same file safe to preview standalone.
-  useEffect(() => {
-    function ensureScript(src) {
-      if (![...document.scripts].some((s) => s.src === src)) {
-        const s = document.createElement("script");
-        s.src = src;
-        s.async = true;
-        document.head.appendChild(s);
-      }
-    }
-    try {
-      ensureScript("https://telegram.org/js/telegram-web-app.js");
-      ensureScript("https://st.max.ru/js/max-web-app.js");
-    } catch (e) {}
-
-    let vp = document.querySelector('meta[name="viewport"]');
-    if (!vp) {
-      vp = document.createElement("meta");
-      vp.name = "viewport";
-      document.head.appendChild(vp);
-    }
-    vp.content = "width=device-width, initial-scale=1, viewport-fit=cover";
-
-    function detect() {
-      if (window.Telegram && window.Telegram.WebApp) {
-        const tg = window.Telegram.WebApp;
-        try {
-          tg.ready();
-          tg.expand();
-          tg.setHeaderColor && tg.setHeaderColor("#1C1613");
-          tg.setBackgroundColor && tg.setBackgroundColor("#1C1613");
-          tg.disableVerticalSwipes && tg.disableVerticalSwipes();
-        } catch (e) {}
-        setPlatform("telegram");
-        const u = tg.initDataUnsafe && tg.initDataUnsafe.user;
-        if (u) {
-          setProfileUser({ id: u.id, firstName: u.first_name, lastName: u.last_name, username: u.username, photo: u.photo_url, source: "telegram" });
-        }
-      } else if (window.WebApp && typeof window.WebApp.platform === "string") {
-        setPlatform("max");
-        const u = window.WebApp.initDataUnsafe && window.WebApp.initDataUnsafe.user;
-        if (u) {
-          setProfileUser({ id: u.id, firstName: u.first_name, lastName: u.last_name, username: u.username, photo: u.photo_url, source: "max" });
-        }
-      } else {
-        setPlatform("browser");
-      }
-    }
-    detect();
-    const t = setTimeout(detect, 500); // SDKs can attach a moment after script load
-    return () => clearTimeout(t);
-  }, []);
-
-  // Real viewport height (not 100vh) so keyboard/address-bar changes on Android & iOS
-  // don't clip content or the sticky bottom buttons.
-  useEffect(() => {
-    function updateHeight() {
-      setAppHeight(window.visualViewport ? window.visualViewport.height : window.innerHeight);
-    }
-    updateHeight();
-    window.addEventListener("resize", updateHeight);
-    window.visualViewport && window.visualViewport.addEventListener("resize", updateHeight);
-    return () => {
-      window.removeEventListener("resize", updateHeight);
-      window.visualViewport && window.visualViewport.removeEventListener("resize", updateHeight);
-    };
-  }, []);
-
-  function haptic(kind) {
-    try {
-      if (platform === "telegram" && window.Telegram?.WebApp?.HapticFeedback) {
-        const hf = window.Telegram.WebApp.HapticFeedback;
-        if (kind === "success" || kind === "error" || kind === "warning") hf.notificationOccurred(kind);
-        else if (kind === "select") hf.selectionChanged();
-        else hf.impactOccurred(kind || "light");
-      } else if (platform === "max" && window.WebApp?.HapticFeedback) {
-        const hf = window.WebApp.HapticFeedback;
-        if (kind === "success" || kind === "error" || kind === "warning") hf.notificationOccurred(kind, true);
-        else if (kind === "select") hf.selectionChanged(true);
-        else hf.impactOccurred(kind || "light", true);
-      }
-    } catch (e) {}
-  }
-
-  // Order history is device-local (keyed by Telegram/MAX user id). In production this
-  // would instead be fetched from your backend by that same id, so it's available
-  // across devices — this is a lightweight stand-in for the prototype.
-  useEffect(() => {
-    try {
-      const key = `ugolki_orders_${(profileUser && profileUser.id) || "guest"}`;
-      const raw = localStorage.getItem(key);
-      setOrderHistory(raw ? JSON.parse(raw) : []);
-    } catch (e) {
-      setOrderHistory([]);
-    }
-  }, [profileUser && profileUser.id]);
-
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTo(0, 0);
-  }, [step]);
-
-  useEffect(() => {
-    if (!order) return;
-    if (statusIdx >= 3) return;
-    const t = setTimeout(() => setStatusIdx((i) => i + 1), 3600);
-    return () => clearTimeout(t);
-  }, [order, statusIdx]);
-
-  const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
-  const discount = promoApplied ? Math.round(subtotal * 0.1) : 0;
-  const deliveryFee = serviceType === "delivery" && subtotal - discount < 1000 && subtotal > 0 ? 149 : 0;
-  const total = Math.max(subtotal - discount + deliveryFee, 0);
-  const cartCount = cart.reduce((s, l) => s + l.qty, 0);
-
-  function openModal(item) {
-    haptic("light");
-    if (item.mods) {
-      setModalItem(item);
-      setModalSauce(SAUCES[0]);
-      setModalSpice(SPICE[0]);
-      setModalQty(1);
-    } else {
-      addToCart(item.id, item.name, item.price, 1, null, null);
-    }
-  }
-
-  function addToCart(baseId, name, price, qty, sauce, spice) {
-    const lineId = sauce ? `${baseId}__${sauce}__${spice}` : baseId;
-    setCart((prev) => {
-      const found = prev.find((l) => l.lineId === lineId);
-      if (found) {
-        return prev.map((l) => (l.lineId === lineId ? { ...l, qty: l.qty + qty } : l));
-      }
-      return [...prev, { lineId, baseId, name, price, qty, sauce, spice }];
-    });
-  }
-
-  function changeQty(lineId, delta) {
-    haptic("light");
-    setCart((prev) =>
-      prev
-        .map((l) => (l.lineId === lineId ? { ...l, qty: l.qty + delta } : l))
-        .filter((l) => l.qty > 0)
-    );
-  }
-
-  function applyPromo() {
-    if (promo.trim().toUpperCase() === "УГОЛЁК10") {
-      setPromoApplied(true);
-      setPromoError("");
-      haptic("success");
-    } else {
-      setPromoApplied(false);
-      setPromoError("Промокод не найден");
-      haptic("error");
-    }
-  }
-
-  function goCheckoutFromCart() {
-    setStep("checkout");
-  }
-
-  function submitPayment() {
-    haptic("medium");
-    setPaying(true);
-    setTimeout(() => {
-      setPaying(false);
-      haptic("success");
-      const num = "УГ-" + Math.floor(1000 + Math.random() * 9000);
-      setOrder({
-        num,
-        items: cart,
-        total,
-        serviceType,
-        point: POINTS.find((p) => p.id === pointId),
-        address,
-        timing,
-        scheduledTime,
-        customer,
-        payMethod,
-      });
-      setStatusIdx(0);
-      setStep("confirm");
-
-      const historyEntry = { num, date: Date.now(), items: cart, total, serviceType };
-      setOrderHistory((prev) => {
-        const next = [historyEntry, ...prev].slice(0, 20);
-        try {
-          localStorage.setItem(`ugolki_orders_${(profileUser && profileUser.id) || "guest"}`, JSON.stringify(next));
-        } catch (e) {}
-        return next;
-      });
-    }, 1500);
-  }
-
-  function newOrder() {
-    setCart([]);
-    setOrder(null);
-    setStatusIdx(0);
-    setPromo("");
-    setPromoApplied(false);
-    setPromoError("");
-    setCustomer({ name: "", phone: "", comment: "" });
-    setStep("home");
-  }
-
-  const stepIdx = STEPS.indexOf(step);
-  const canBack = step === "profile" ? true : stepIdx > 0;
-
-  function goBack() {
-    if (step === "profile") {
-      setStep(profileOrigin);
-      return;
-    }
-    if (stepIdx > 0) setStep(STEPS[stepIdx - 1]);
-  }
-
-  // Native back button: on Telegram/MAX we drive their chrome back arrow instead of
-  // (or in addition to) our in-app chevron, so it also catches the hardware/gesture back.
-  useEffect(() => {
-    if (platform === "telegram" && window.Telegram?.WebApp?.BackButton) {
-      const bb = window.Telegram.WebApp.BackButton;
-      const handler = () => goBack();
-      if (canBack) {
-        bb.show();
-        bb.onClick(handler);
-      } else {
-        bb.hide();
-      }
-      return () => bb.offClick(handler);
-    }
-    if (platform === "max" && window.WebApp?.BackButton) {
-      const bb = window.WebApp.BackButton;
-      const handler = () => goBack();
-      if (canBack) {
-        bb.show();
-        bb.onClick(handler);
-      } else {
-        bb.hide();
-      }
-      return () => bb.offClick(handler);
-    }
-  }, [step, platform, canBack]);
-
-  // Warn before closing while the person has items in cart and is mid-checkout.
-  useEffect(() => {
-    const shouldWarn = cart.length > 0 && (step === "checkout" || step === "payment");
-    try {
-      if (platform === "telegram" && window.Telegram?.WebApp) {
-        shouldWarn ? window.Telegram.WebApp.enableClosingConfirmation() : window.Telegram.WebApp.disableClosingConfirmation();
-      } else if (platform === "max" && window.WebApp) {
-        shouldWarn ? window.WebApp.enableClosingConfirmation() : window.WebApp.disableClosingConfirmation();
-      }
-    } catch (e) {}
-  }, [step, cart.length, platform]);
-
-  const statuses =
-    serviceType === "delivery"
-      ? ["Принят", "Готовится", "В пути", "Доставлен"]
-      : ["Принят", "Готовится", "Готов к выдаче", "Выдан"];
-
-  return (
-    <div className={`page ${platform !== "browser" ? "embedded" : ""}`} style={{ "--app-height": `${appHeight}px` }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        .page {
-          height: var(--app-height, 100dvh);
-          background: #14100D;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 24px 12px;
-          font-family: 'Manrope', sans-serif;
-          overflow: hidden;
-        }
-        .page.embedded {
-          padding: 0;
-        }
-        .frame {
-          width: 100%;
-          max-width: 420px;
-          height: 840px;
-          max-height: 100%;
-          background: #1C1613;
-          border-radius: 34px;
-          overflow: hidden;
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          box-shadow: 0 30px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04);
-        }
-        .embedded .frame {
-          max-width: 100%;
-          height: 100%;
-          max-height: none;
-          border-radius: 0;
-          box-shadow: none;
-        }
-        .topbar {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: calc(18px + env(safe-area-inset-top)) 18px 10px;
-          flex-shrink: 0;
-        }
-        .backbtn {
-          width: 34px; height: 34px;
-          border-radius: 10px;
-          background: rgba(255,255,255,0.06);
-          border: none;
-          display: flex; align-items: center; justify-content: center;
-          color: #F6EEE1;
-          cursor: pointer;
-        }
-        .topbar h1 {
-          font-family: 'Oswald', sans-serif;
-          font-weight: 600;
-          font-size: 18px;
-          letter-spacing: 0.02em;
-          color: #F6EEE1;
-          margin: 0;
-          text-transform: uppercase;
-          flex: 1;
-        }
-        .cartchip {
-          display: flex; align-items: center; gap: 6px;
-          background: #2A211B;
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 20px;
-          padding: 7px 12px;
-          color: #F6EEE1;
-          font-family: 'JetBrains Mono', monospace;
-          font-size: 12px;
-          cursor: pointer;
-        }
-        .dots { display: flex; gap: 5px; padding: 0 18px 12px; flex-shrink: 0; }
-        .dot { height: 3px; flex: 1; border-radius: 3px; background: rgba(255,255,255,0.09); }
-        .dot.done { background: #FF5A2A; }
-        .scroll {
-          flex: 1;
-          overflow-y: auto;
-          padding: 4px 18px 18px;
-        }
-        .scroll::-webkit-scrollbar { width: 0; }
-
-        /* HOME */
-        .hero {
-          padding: 18px 4px 26px;
-        }
-        .hero .brand {
-          font-family: 'Oswald', sans-serif;
-          font-size: 34px;
-          font-weight: 700;
-          letter-spacing: 0.01em;
-          color: #FBF3E4;
-          display: flex; align-items: center; gap: 10px;
-          margin: 0;
-        }
-        .hero .tag {
-          color: #A79485;
-          font-size: 13.5px;
-          margin-top: 6px;
-        }
-        .flameicon { color: #FF5A2A; }
-        .segwrap {
-          display: flex;
-          background: #241C17;
-          border-radius: 14px;
-          padding: 4px;
-          margin-top: 22px;
-          gap: 4px;
-        }
-        .segbtn {
-          flex: 1;
-          border: none;
-          background: transparent;
-          color: #A79485;
-          font-family: 'Manrope', sans-serif;
-          font-weight: 700;
-          font-size: 13.5px;
-          padding: 11px 6px;
-          border-radius: 10px;
-          display: flex; align-items: center; justify-content: center; gap: 7px;
-          cursor: pointer;
-          transition: all .15s;
-        }
-        .segbtn.active {
-          background: linear-gradient(135deg,#FF5A2A,#E8401A);
-          color: #fff;
-        }
-        .sectionlabel {
-          font-family: 'JetBrains Mono', monospace;
-          text-transform: uppercase;
-          font-size: 11px;
-          letter-spacing: 0.09em;
-          color: #7C6E62;
-          margin: 24px 0 10px;
-        }
-        .pointcard {
-          display: flex; align-items: center; gap: 12px;
-          background: #241C17;
-          border: 1.5px solid rgba(255,255,255,0.05);
-          border-radius: 14px;
-          padding: 13px 14px;
-          margin-bottom: 9px;
-          cursor: pointer;
-        }
-        .pointcard.sel {
-          border-color: #FF5A2A;
-          background: #2A1E17;
-        }
-        .pointcard .pin {
-          width: 34px; height: 34px; border-radius: 10px;
-          background: rgba(255,90,42,0.13);
-          color: #FF8A5B;
-          display: flex; align-items: center; justify-content: center;
-          flex-shrink: 0;
-        }
-        .pointcard .pname { color: #F6EEE1; font-weight: 700; font-size: 14px; }
-        .pointcard .ptime { color: #8C8178; font-size: 12px; margin-top: 2px; }
-        .radiodot {
-          width: 18px; height: 18px; border-radius: 50%;
-          border: 2px solid #5A4E44;
-          margin-left: auto; flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .pointcard.sel .radiodot { border-color: #FF5A2A; }
-        .radiodot .inner { width: 9px; height: 9px; border-radius: 50%; background: #FF5A2A; }
-        .addrbox {
-          background: #241C17;
-          border: 1.5px solid rgba(255,255,255,0.05);
-          border-radius: 14px;
-          padding: 14px;
-        }
-        .addrbox input {
-          width: 100%;
-          background: #17110D;
-          border: 1px solid rgba(255,255,255,0.07);
-          border-radius: 10px;
-          padding: 12px 12px;
-          color: #F6EEE1;
-          font-family: 'Manrope', sans-serif;
-          font-size: 14px;
-          outline: none;
-        }
-        .addrbox input::placeholder { color: #6B5F54; }
-        .addrbox .hint { color: #8C8178; font-size: 11.5px; margin-top: 8px; display:flex; gap:6px; align-items:center; }
-
-        .primarybtn {
-          width: 100%;
-          border: none;
-          background: linear-gradient(135deg,#FF6B35,#E8401A);
-          color: #fff;
-          font-family: 'Oswald', sans-serif;
-          font-weight: 600;
-          font-size: 15.5px;
-          letter-spacing: 0.02em;
-          text-transform: uppercase;
-          padding: 16px;
-          border-radius: 14px;
-          cursor: pointer;
-          box-shadow: 0 10px 24px rgba(255,90,42,0.28);
-          display: flex; align-items: center; justify-content: center; gap: 8px;
-        }
-        .primarybtn:disabled {
-          opacity: 0.4;
-          box-shadow: none;
-          cursor: not-allowed;
-        }
-        .secondarybtn {
-          width: 100%;
-          border: 1.5px solid rgba(255,255,255,0.1);
-          background: transparent;
-          color: #F6EEE1;
-          font-family: 'Manrope', sans-serif;
-          font-weight: 700;
-          font-size: 14px;
-          padding: 13px;
-          border-radius: 14px;
-          cursor: pointer;
-        }
-        .homecta { margin-top: 24px; }
-
-        /* MENU */
-        .cats {
-          display: flex;
-          gap: 8px;
-          overflow-x: auto;
-          padding-bottom: 4px;
-          margin-bottom: 14px;
-        }
-        .cats::-webkit-scrollbar { display: none; }
-        .catbtn {
-          flex-shrink: 0;
-          border: none;
-          background: #241C17;
-          color: #A79485;
-          font-family: 'Manrope', sans-serif;
-          font-weight: 700;
-          font-size: 13px;
-          padding: 9px 15px;
-          border-radius: 20px;
-          cursor: pointer;
-          position: relative;
-        }
-        .catbtn.active {
-          background: #2E2119;
-          color: #FF8A5B;
-          box-shadow: inset 0 0 0 1.5px #FF5A2A;
-        }
-        .dishcard {
-          background: #241C17;
-          border-radius: 16px;
-          padding: 14px;
-          margin-bottom: 10px;
-          display: flex;
-          gap: 12px;
-          align-items: center;
-        }
-        .dishicon {
-          width: 52px; height: 52px; border-radius: 12px;
-          background: radial-gradient(circle at 30% 25%, #3A2A1E, #201712);
-          display: flex; align-items: center; justify-content: center;
-          flex-shrink: 0;
-          color: #FF7A45;
-        }
-        .dishinfo { flex: 1; min-width: 0; }
-        .dishinfo .dname { color: #F6EEE1; font-weight: 700; font-size: 14px; line-height: 1.3; }
-        .dishinfo .dmeta {
-          font-family: 'JetBrains Mono', monospace;
-          color: #7C6E62;
-          font-size: 10.5px;
-          margin-top: 4px;
-          letter-spacing: 0.02em;
-        }
-        .dishinfo .dprice {
-          font-family: 'Oswald', sans-serif;
-          color: #FF8A5B;
-          font-weight: 600;
-          font-size: 15px;
-          margin-top: 6px;
-        }
-        .addbtn {
-          width: 36px; height: 36px;
-          border-radius: 10px;
-          border: none;
-          background: rgba(255,90,42,0.15);
-          color: #FF7A45;
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer;
-          flex-shrink: 0;
-        }
-
-        .stickycta {
-          position: absolute;
-          left: 18px; right: 18px;
-          bottom: calc(18px + env(safe-area-inset-bottom));
-        }
-        .floatbar {
-          position: absolute;
-          left: 14px; right: 14px;
-          bottom: calc(14px + env(safe-area-inset-bottom));
-          background: linear-gradient(135deg,#FF6B35,#E8401A);
-          border-radius: 16px;
-          padding: 14px 16px;
-          display: flex; align-items: center; justify-content: space-between;
-          box-shadow: 0 14px 30px rgba(255,90,42,0.35);
-          cursor: pointer;
-          color: #fff;
-        }
-        .floatbar .fbleft { display: flex; align-items: center; gap: 10px; }
-        .floatbar .badge {
-          background: rgba(255,255,255,0.25);
-          border-radius: 8px;
-          width: 24px; height: 24px;
-          font-size: 12px; font-weight: 800;
-          display: flex; align-items: center; justify-content: center;
-          font-family: 'JetBrains Mono', monospace;
-        }
-        .floatbar .flabel { font-weight: 700; font-size: 14px; font-family: 'Manrope', sans-serif; }
-        .floatbar .fsum { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 15px; }
-
-        /* MODAL */
-        .modalbg {
-          position: absolute; inset: 0;
-          background: rgba(10,7,5,0.6);
-          display: flex; align-items: flex-end;
-          z-index: 20;
-        }
-        .sheet {
-          width: 100%;
-          background: #201812;
-          border-radius: 22px 22px 0 0;
-          padding: 20px 20px 22px;
-          border-top: 1px solid rgba(255,255,255,0.06);
-        }
-        .sheet .sheethead { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
-        .sheet h2 { font-family: 'Oswald', sans-serif; color: #F6EEE1; font-size: 18px; margin: 0; font-weight: 600; }
-        .sheet .xbtn { color: #8C8178; background: none; border: none; cursor: pointer; }
-        .optlabel { color: #7C6E62; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; margin: 14px 0 8px; }
-        .optrow { display: flex; gap: 8px; flex-wrap: wrap; }
-        .optchip {
-          border: 1.5px solid rgba(255,255,255,0.08);
-          background: #2A211B;
-          color: #C9BCAE;
-          font-size: 12.5px; font-weight: 600;
-          padding: 8px 13px;
-          border-radius: 20px;
-          cursor: pointer;
-        }
-        .optchip.on { border-color: #FF5A2A; color: #FF8A5B; background: rgba(255,90,42,0.12); }
-        .qtyrow { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
-        .qtystep { display: flex; align-items: center; gap: 14px; }
-        .qtystep button {
-          width: 32px; height: 32px; border-radius: 9px; border: none;
-          background: #2A211B; color: #F6EEE1; display: flex; align-items: center; justify-content: center; cursor: pointer;
-        }
-        .qtystep span { font-family: 'Oswald', sans-serif; color: #F6EEE1; font-size: 16px; min-width: 16px; text-align: center; }
-
-        /* CART */
-        .cartline {
-          display: flex; align-items: center; gap: 12px;
-          padding: 12px 0;
-          border-bottom: 1px solid rgba(255,255,255,0.06);
-        }
-        .cartline .cname { color: #F6EEE1; font-weight: 700; font-size: 13.5px; }
-        .cartline .cmods { color: #7C6E62; font-size: 11px; margin-top: 2px; }
-        .cartline .cprice { font-family:'Oswald',sans-serif; color: #FF8A5B; font-size: 13.5px; margin-top: 5px; font-weight: 600; }
-        .stepper { display: flex; align-items: center; gap: 10px; background: #241C17; border-radius: 10px; padding: 4px; }
-        .stepper button { width: 26px; height: 26px; border: none; border-radius: 7px; background: #2E241C; color: #F6EEE1; cursor: pointer; }
-        .stepper span { font-family: 'JetBrains Mono', monospace; color: #F6EEE1; font-size: 13px; min-width: 12px; text-align: center; }
-        .empty { text-align: center; padding: 60px 20px; color: #7C6E62; }
-        .empty svg { margin-bottom: 12px; opacity: 0.5; }
-
-        .promorow { display: flex; gap: 8px; margin-top: 20px; }
-        .promorow input {
-          flex: 1; background: #17110D; border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 10px; padding: 11px 12px; color: #F6EEE1; font-family: 'JetBrains Mono', monospace;
-          font-size: 13px; outline: none; text-transform: uppercase;
-        }
-        .promorow input::placeholder { color: #6B5F54; text-transform: none; }
-        .promorow button {
-          background: #2A211B; border: 1px solid rgba(255,255,255,0.08); color: #F6EEE1;
-          border-radius: 10px; padding: 0 16px; font-weight: 700; font-size: 12.5px; cursor: pointer;
-        }
-        .promomsg { font-size: 11.5px; margin-top: 7px; }
-        .promomsg.ok { color: #8FBF7A; }
-        .promomsg.err { color: #E8705A; }
-
-        .sumrow { display: flex; justify-content: space-between; padding: 6px 0; color: #A79485; font-size: 13px; }
-        .sumrow.total { color: #F6EEE1; font-weight: 800; font-size: 16px; font-family: 'Oswald', sans-serif; border-top: 1px dashed rgba(255,255,255,0.12); margin-top: 8px; padding-top: 14px; }
-        .sumrow .neg { color: #8FBF7A; }
-
-        /* CHECKOUT */
-        .fieldlabel { color: #7C6E62; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; margin: 18px 0 8px; }
-        .textinput {
-          width: 100%; background: #241C17; border: 1.5px solid rgba(255,255,255,0.06);
-          border-radius: 12px; padding: 13px 14px 13px 40px; color: #F6EEE1; font-family: 'Manrope', sans-serif;
-          font-size: 14px; outline: none; position: relative;
-        }
-        .inputwrap { position: relative; }
-        .inputwrap svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #7C6E62; }
-        .textinput::placeholder { color: #6B5F54; }
-        .timechoice { display: flex; gap: 8px; }
-        .timechoice button {
-          flex: 1; border: 1.5px solid rgba(255,255,255,0.07); background: #241C17; color: #C9BCAE;
-          font-weight: 700; font-size: 13px; padding: 11px; border-radius: 12px; cursor: pointer;
-        }
-        .timechoice button.on { border-color: #FF5A2A; color: #FF8A5B; background: rgba(255,90,42,0.1); }
-        .recapcard {
-          background: #241C17; border-radius: 14px; padding: 14px; display: flex; gap: 12px; align-items: flex-start;
-        }
-        .recapcard .ricon { color: #FF7A45; flex-shrink: 0; margin-top: 2px; }
-        .recapcard .rtitle { color: #F6EEE1; font-weight: 700; font-size: 13.5px; }
-        .recapcard .rsub { color: #8C8178; font-size: 12px; margin-top: 3px; }
-
-        /* PAYMENT */
-        .paycard {
-          display: flex; align-items: center; gap: 13px;
-          background: #241C17; border: 1.5px solid rgba(255,255,255,0.05);
-          border-radius: 14px; padding: 14px; margin-bottom: 10px; cursor: pointer;
-        }
-        .paycard.sel { border-color: #FF5A2A; background: #2A1E17; }
-        .paycard .picn {
-          width: 38px; height: 38px; border-radius: 10px; background: rgba(255,90,42,0.13);
-          color: #FF8A5B; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-        }
-        .paycard .pname2 { color: #F6EEE1; font-weight: 700; font-size: 14px; }
-        .paycard .psub { color: #8C8178; font-size: 11.5px; margin-top: 2px; }
-        .paytotalbar {
-          background: #241C17; border-radius: 14px; padding: 16px; display: flex; justify-content: space-between; align-items: center; margin: 18px 0;
-        }
-        .paytotalbar .ptl { color: #8C8178; font-size: 12.5px; }
-        .paytotalbar .ptv { font-family: 'Oswald', sans-serif; color: #F6EEE1; font-size: 22px; font-weight: 700; margin-top: 2px; }
-        .spinner {
-          width: 18px; height: 18px; border-radius: 50%;
-          border: 2.5px solid rgba(255,255,255,0.35); border-top-color: #fff;
-          animation: spin 0.7s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* CONFIRM */
-        .confirmwrap { padding: 10px 4px 4px; }
-        .ticket {
-          background: #FBF3E4;
-          border-radius: 18px;
-          padding: 22px 20px 18px;
-          position: relative;
-          color: #241C17;
-          box-shadow: 0 14px 30px rgba(0,0,0,0.35);
-        }
-        .ticket .thead { text-align: center; }
-        .ticket .thead .flamewrap { display: flex; justify-content: center; margin-bottom: 6px; }
-        .ticket .thead h2 { font-family: 'Oswald', sans-serif; font-size: 19px; font-weight: 700; margin: 0; letter-spacing: 0.01em; }
-        .ticket .thead .tnum { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #8A7B6B; margin-top: 4px; }
-        .perf {
-          position: relative;
-          height: 1px;
-          margin: 16px -20px;
-          border-top: 1.5px dashed #D8C9B4;
-        }
-        .perf::before, .perf::after {
-          content: ''; position: absolute; top: -9px; width: 18px; height: 18px; border-radius: 50%;
-          background: #1C1613;
-        }
-        .perf::before { left: -9px; }
-        .perf::after { right: -9px; }
-        .tline { display: flex; justify-content: space-between; font-size: 12.5px; padding: 4px 0; color: #4A3E32; }
-        .tline .tqty { font-family: 'JetBrains Mono', monospace; color: #8A7B6B; margin-right: 6px; }
-        .ttotal { display: flex; justify-content: space-between; font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 16px; margin-top: 10px; }
-        .tmeta { font-size: 11.5px; color: #8A7B6B; margin-top: 12px; line-height: 1.6; }
-
-        .trackwrap { margin-top: 26px; }
-        .coalbed {
-          height: 8px; border-radius: 8px; margin-top: 14px;
-          background: linear-gradient(90deg, #3A1D10, #1C0F09);
-          position: relative; overflow: hidden;
-        }
-        .coalbed::after {
-          content: ''; position: absolute; inset: 0;
-          background: radial-gradient(circle at 20% 50%, rgba(255,120,50,0.9) 0 3px, transparent 4px),
-                      radial-gradient(circle at 45% 50%, rgba(255,160,60,0.8) 0 2px, transparent 3px),
-                      radial-gradient(circle at 68% 50%, rgba(255,90,30,0.9) 0 3px, transparent 4px),
-                      radial-gradient(circle at 88% 50%, rgba(255,140,50,0.7) 0 2px, transparent 3px);
-          animation: ember 1.6s ease-in-out infinite alternate;
-        }
-        @keyframes ember { from { opacity: 0.55; } to { opacity: 1; } }
-        .statuses { display: flex; justify-content: space-between; margin-top: 14px; }
-        .statuses .st { display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 1; }
-        .statuses .sicon {
-          width: 34px; height: 34px; border-radius: 50%;
-          background: #2A211B; color: #6B5F54;
-          display: flex; align-items: center; justify-content: center;
-          border: 1.5px solid rgba(255,255,255,0.06);
-        }
-        .statuses .st.on .sicon { background: rgba(255,90,42,0.16); color: #FF8A5B; border-color: #FF5A2A; }
-        .statuses .st.on .sicon svg { filter: drop-shadow(0 0 6px rgba(255,90,42,0.7)); }
-        .statuses .slabel { font-size: 9.5px; color: #7C6E62; text-align: center; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
-        .statuses .st.on .slabel { color: #F6EEE1; }
-        .homescroll { padding-top: calc(30px + env(safe-area-inset-top)); }
-        .confirmscroll { padding-top: calc(24px + env(safe-area-inset-top)); }
-
-        /* PROFILE */
-        .herotop { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-        .profilebtn {
-          width: 34px; height: 34px; border-radius: 10px;
-          background: rgba(255,255,255,0.06);
-          border: none; padding: 0; overflow: hidden;
-          display: flex; align-items: center; justify-content: center;
-          color: #F6EEE1; cursor: pointer; flex-shrink: 0;
-        }
-        .profilebtn img { width: 100%; height: 100%; object-fit: cover; }
-        .profilehead { display: flex; align-items: center; gap: 14px; padding: 6px 0 22px; }
-        .avatarbig {
-          width: 62px; height: 62px; border-radius: 16px;
-          background: linear-gradient(135deg,#3A2A1E,#201712);
-          display: flex; align-items: center; justify-content: center;
-          color: #FF8A5B; overflow: hidden; flex-shrink: 0;
-        }
-        .avatarbig img { width: 100%; height: 100%; object-fit: cover; }
-        .profilehead .pname3 { color: #F6EEE1; font-weight: 800; font-size: 17px; font-family: 'Oswald', sans-serif; }
-        .profilehead .puser { color: #8C8178; font-size: 12.5px; margin-top: 2px; }
-        .platchip {
-          display: inline-flex; align-items: center; gap: 5px;
-          margin-top: 8px; background: rgba(255,90,42,0.13); color: #FF8A5B;
-          font-size: 10.5px; font-weight: 700; padding: 4px 9px; border-radius: 20px;
-          text-transform: uppercase; letter-spacing: 0.03em;
-        }
-        .guesthint { background: #241C17; border-radius: 14px; padding: 13px 14px; color: #8C8178; font-size: 12px; line-height: 1.6; margin-bottom: 18px; }
-        .histcard { background: #241C17; border-radius: 14px; padding: 13px 14px; margin-bottom: 9px; }
-        .histcard .hrow { display: flex; justify-content: space-between; align-items: center; }
-        .histcard .hnum { font-family: 'JetBrains Mono', monospace; color: #F6EEE1; font-weight: 700; font-size: 12.5px; }
-        .histcard .hdate { color: #7C6E62; font-size: 11px; }
-        .histcard .hitems { color: #A79485; font-size: 12px; margin-top: 6px; line-height: 1.5; }
-        .histcard .hfoot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
-        .histcard .htotal { font-family: 'Oswald', sans-serif; color: #FF8A5B; font-weight: 700; font-size: 14px; }
-        .histcard .hbadge { background: rgba(143,191,122,0.15); color: #8FBF7A; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px; text-transform: uppercase; }
-      `}</style>
-
-      <div className="frame">
-        {/* HOME */}
-        {step === "home" && (
-          <div className="scroll homescroll" ref={scrollRef}>
-            <div className="hero">
-              <div className="herotop">
-                <h1 className="brand"><Flame className="flameicon" size={30} />УГОЛЬКИ</h1>
-                <button className="profilebtn" onClick={() => { setProfileOrigin("home"); setStep("profile"); }}>
-                  {profileUser && profileUser.photo ? <img src={profileUser.photo} alt="" /> : <User size={16} />}
-                </button>
-              </div>
-              <div className="tag">шашлычная у дома · с пылу с жару за 20 минут</div>
-
-              <div className="segwrap">
-                <button className={`segbtn ${serviceType === "pickup" ? "active" : ""}`} onClick={() => setServiceType("pickup")}>
-                  <Store size={15} /> Самовывоз
-                </button>
-                <button className={`segbtn ${serviceType === "delivery" ? "active" : ""}`} onClick={() => setServiceType("delivery")}>
-                  <Truck size={15} /> Доставка
-                </button>
-              </div>
-
-              {serviceType === "pickup" ? (
-                <>
-                  <div className="sectionlabel">Выберите точку</div>
-                  {POINTS.map((p) => (
-                    <div key={p.id} className={`pointcard ${pointId === p.id ? "sel" : ""}`} onClick={() => setPointId(p.id)}>
-                      <div className="pin"><MapPin size={16} /></div>
-                      <div>
-                        <div className="pname">{p.name}</div>
-                        <div className="ptime">{p.time}</div>
-                      </div>
-                      <div className="radiodot">{pointId === p.id && <div className="inner" />}</div>
-                    </div>
-                  ))}
-                </>
-              ) : (
-                <>
-                  <div className="sectionlabel">Адрес доставки</div>
-                  <div className="addrbox">
-                    <input placeholder="Улица, дом, квартира" value={address} onChange={(e) => setAddress(e.target.value)} />
-                    <div className="hint"><Clock size={13} /> Доставка 35–50 минут · бесплатно от 1000 ₽</div>
-                  </div>
-                </>
-              )}
-
-              <div className="homecta">
-                <button
-                  className="primarybtn"
-                  disabled={serviceType === "delivery" && address.trim().length < 3}
-                  onClick={() => setStep("menu")}
-                >
-                  Выбрать блюда
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* MENU */}
-        {step === "menu" && (
-          <>
-            <div className="topbar">
-              {platform === "browser" && <button className="backbtn" onClick={goBack}><ChevronLeft size={18} /></button>}
-              <h1>Меню</h1>
-              {cartCount > 0 && (
-                <div className="cartchip" onClick={() => setStep("cart")}>
-                  <ShoppingBag size={13} /> {cartCount} · {money(subtotal)}
-                </div>
-              )}
-              <button className="profilebtn" onClick={() => { setProfileOrigin("menu"); setStep("profile"); }}>
-                {profileUser && profileUser.photo ? <img src={profileUser.photo} alt="" /> : <User size={16} />}
-              </button>
-            </div>
-            <div className="scroll" ref={scrollRef} style={{ paddingBottom: cartCount > 0 ? 90 : 18 }}>
-              <div className="cats">
-                {CATEGORIES.map((c) => (
-                  <button key={c} className={`catbtn ${activeCat === c ? "active" : ""}`} onClick={() => { haptic("select"); setActiveCat(c); }}>
-                    {c}
-                  </button>
-                ))}
-              </div>
-              {ITEMS.filter((i) => i.cat === activeCat).map((item) => (
-                <div className="dishcard" key={item.id}>
-                  <div className="dishicon"><Flame size={22} /></div>
-                  <div className="dishinfo">
-                    <div className="dname">{item.name}</div>
-                    <div className="dmeta">{item.weight}{item.kcal ? ` · ${item.kcal}` : ""}</div>
-                    <div className="dprice">{money(item.price)}</div>
-                  </div>
-                  <button className="addbtn" onClick={() => openModal(item)}><Plus size={18} /></button>
-                </div>
-              ))}
-            </div>
-            {cartCount > 0 && (
-              <div className="floatbar" onClick={() => setStep("cart")}>
-                <div className="fbleft">
-                  <div className="badge">{cartCount}</div>
-                  <div className="flabel">В корзину</div>
-                </div>
-                <div className="fsum">{money(subtotal)}</div>
-              </div>
-            )}
-            {modalItem && (
-              <div className="modalbg" onClick={() => setModalItem(null)}>
-                <div className="sheet" onClick={(e) => e.stopPropagation()}>
-                  <div className="sheethead">
-                    <div>
-                      <h2>{modalItem.name}</h2>
-                    </div>
-                    <button className="xbtn" onClick={() => setModalItem(null)}><X size={20} /></button>
-                  </div>
-                  <div className="optlabel">Соус</div>
-                  <div className="optrow">
-                    {SAUCES.map((s) => (
-                      <div key={s} className={`optchip ${modalSauce === s ? "on" : ""}`} onClick={() => setModalSauce(s)}>{s}</div>
-                    ))}
-                  </div>
-                  <div className="optlabel">Острота</div>
-                  <div className="optrow">
-                    {SPICE.map((s) => (
-                      <div key={s} className={`optchip ${modalSpice === s ? "on" : ""}`} onClick={() => setModalSpice(s)}>{s}</div>
-                    ))}
-                  </div>
-                  <div className="qtyrow">
-                    <div className="qtystep">
-                      <button onClick={() => setModalQty((q) => Math.max(1, q - 1))}><Minus size={15} /></button>
-                      <span>{modalQty}</span>
-                      <button onClick={() => setModalQty((q) => q + 1)}><Plus size={15} /></button>
-                    </div>
-                  </div>
-                  <div style={{ marginTop: 18 }}>
-                    <button
-                      className="primarybtn"
-                      onClick={() => {
-                        addToCart(modalItem.id, modalItem.name, modalItem.price, modalQty, modalSauce, modalSpice);
-                        setModalItem(null);
-                      }}
-                    >
-                      Добавить за {money(modalItem.price * modalQty)}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* CART */}
-        {step === "cart" && (
-          <>
-            <div className="topbar">
-              {platform === "browser" && <button className="backbtn" onClick={goBack}><ChevronLeft size={18} /></button>}
-              <h1>Корзина</h1>
-              <button className="profilebtn" onClick={() => { setProfileOrigin("cart"); setStep("profile"); }}>
-                {profileUser && profileUser.photo ? <img src={profileUser.photo} alt="" /> : <User size={16} />}
-              </button>
-            </div>
-            <div className="scroll" ref={scrollRef} style={{ paddingBottom: cart.length ? 100 : 18 }}>
-              {cart.length === 0 ? (
-                <div className="empty">
-                  <ShoppingBag size={40} />
-                  <div>Корзина пуста</div>
-                </div>
-              ) : (
-                <>
-                  {cart.map((l) => (
-                    <div className="cartline" key={l.lineId}>
-                      <div style={{ flex: 1 }}>
-                        <div className="cname">{l.name}</div>
-                        {l.sauce && <div className="cmods">{l.sauce} · {l.spice}</div>}
-                        <div className="cprice">{money(l.price * l.qty)}</div>
-                      </div>
-                      <div className="stepper">
-                        <button onClick={() => changeQty(l.lineId, -1)}><Minus size={13} /></button>
-                        <span>{l.qty}</span>
-                        <button onClick={() => changeQty(l.lineId, 1)}><Plus size={13} /></button>
-                      </div>
-                    </div>
-                  ))}
-
-                  <div className="promorow">
-                    <input placeholder="Промокод" value={promo} onChange={(e) => setPromo(e.target.value)} />
-                    <button onClick={applyPromo}>Применить</button>
-                  </div>
-                  {promoApplied && <div className="promomsg ok">Промокод УГОЛЁК10 применён — скидка 10%</div>}
-                  {promoError && !promoApplied && <div className="promomsg err">{promoError}</div>}
-
-                  <div style={{ marginTop: 20 }}>
-                    <div className="sumrow"><span>Сумма заказа</span><span>{money(subtotal)}</span></div>
-                    {discount > 0 && <div className="sumrow"><span>Скидка</span><span className="neg">−{money(discount)}</span></div>}
-                    {serviceType === "delivery" && (
-                      <div className="sumrow"><span>Доставка</span><span>{deliveryFee === 0 ? "бесплатно" : money(deliveryFee)}</span></div>
-                    )}
-                    <div className="sumrow total"><span>Итого</span><span>{money(total)}</span></div>
-                  </div>
-                </>
-              )}
-            </div>
-            {cart.length > 0 && (
-              <div className="stickycta">
-                <button className="primarybtn" onClick={goCheckoutFromCart}>Оформить заказ</button>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* CHECKOUT */}
-        {step === "checkout" && (
-          <>
-            <div className="topbar">
-              {platform === "browser" && <button className="backbtn" onClick={goBack}><ChevronLeft size={18} /></button>}
-              <h1>Оформление</h1>
-              <button className="profilebtn" onClick={() => { setProfileOrigin("checkout"); setStep("profile"); }}>
-                {profileUser && profileUser.photo ? <img src={profileUser.photo} alt="" /> : <User size={16} />}
-              </button>
-            </div>
-            <div className="scroll" ref={scrollRef} style={{ paddingBottom: 100 }}>
-              <div className="recapcard">
-                <div className="ricon">{serviceType === "pickup" ? <Store size={18} /> : <Truck size={18} />}</div>
-                <div>
-                  <div className="rtitle">{serviceType === "pickup" ? "Самовывоз" : "Доставка"}</div>
-                  <div className="rsub">{serviceType === "pickup" ? POINTS.find((p) => p.id === pointId)?.name : address}</div>
-                </div>
-              </div>
-
-              <div className="fieldlabel">Когда</div>
-              <div className="timechoice">
-                <button className={timing === "asap" ? "on" : ""} onClick={() => setTiming("asap")}>Как можно скорее</button>
-                <button className={timing === "later" ? "on" : ""} onClick={() => setTiming("later")}>Ко времени</button>
-              </div>
-              {timing === "later" && (
-                <div className="inputwrap" style={{ marginTop: 10 }}>
-                  <Clock size={16} />
-                  <input className="textinput" placeholder="Например, 19:30" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} />
-                </div>
-              )}
-
-              <div className="fieldlabel">Имя</div>
-              <div className="inputwrap">
-                <User size={16} />
-                <input className="textinput" placeholder="Как к вам обращаться" value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
-              </div>
-
-              <div className="fieldlabel">Телефон</div>
-              <div className="inputwrap">
-                <Phone size={16} />
-                <input className="textinput" placeholder="+7 ___ ___-__-__" value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} />
-              </div>
-
-              <div className="fieldlabel">Комментарий (необязательно)</div>
-              <div className="inputwrap">
-                <MessageSquare size={16} />
-                <input className="textinput" placeholder="Например, позвонить за 5 минут" value={customer.comment} onChange={(e) => setCustomer({ ...customer, comment: e.target.value })} />
-              </div>
-            </div>
-            <div className="stickycta">
-              <button
-                className="primarybtn"
-                disabled={customer.name.trim().length < 2 || customer.phone.trim().length < 5}
-                onClick={() => setStep("payment")}
-              >
-                К оплате · {money(total)}
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* PAYMENT */}
-        {step === "payment" && (
-          <>
-            <div className="topbar">
-              {platform === "browser" && <button className="backbtn" onClick={goBack}><ChevronLeft size={18} /></button>}
-              <h1>Оплата</h1>
-              <button className="profilebtn" onClick={() => { setProfileOrigin("payment"); setStep("profile"); }}>
-                {profileUser && profileUser.photo ? <img src={profileUser.photo} alt="" /> : <User size={16} />}
-              </button>
-            </div>
-            <div className="scroll" ref={scrollRef} style={{ paddingBottom: 100 }}>
-              <div className="sectionlabel">Способ оплаты</div>
-              <div className={`paycard ${payMethod === "card" ? "sel" : ""}`} onClick={() => setPayMethod("card")}>
-                <div className="picn"><CreditCard size={18} /></div>
-                <div><div className="pname2">Картой онлайн</div><div className="psub">Visa, Mastercard, Мир</div></div>
-                <div className="radiodot" style={{ marginLeft: "auto" }}>{payMethod === "card" && <div className="inner" />}</div>
-              </div>
-              <div className={`paycard ${payMethod === "sbp" ? "sel" : ""}`} onClick={() => setPayMethod("sbp")}>
-                <div className="picn"><QrCode size={18} /></div>
-                <div><div className="pname2">СБП</div><div className="psub">Оплата по QR-коду</div></div>
-                <div className="radiodot" style={{ marginLeft: "auto" }}>{payMethod === "sbp" && <div className="inner" />}</div>
-              </div>
-              <div className={`paycard ${payMethod === "cash" ? "sel" : ""}`} onClick={() => setPayMethod("cash")}>
-                <div className="picn"><Banknote size={18} /></div>
-                <div><div className="pname2">При получении</div><div className="psub">Наличными или картой курьеру</div></div>
-                <div className="radiodot" style={{ marginLeft: "auto" }}>{payMethod === "cash" && <div className="inner" />}</div>
-              </div>
-
-              <div className="paytotalbar">
-                <div>
-                  <div className="ptl">К оплате</div>
-                  <div className="ptv">{money(total)}</div>
-                </div>
-                <Ticket size={26} color="#5A4E44" />
-              </div>
-            </div>
-            <div className="stickycta">
-              <button className="primarybtn" onClick={submitPayment} disabled={paying}>
-                {paying ? <span className="spinner" /> : (payMethod === "cash" ? "Подтвердить заказ" : `Оплатить ${money(total)}`)}
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* PROFILE */}
-        {step === "profile" && (
-          <>
-            <div className="topbar">
-              {platform === "browser" && <button className="backbtn" onClick={goBack}><ChevronLeft size={18} /></button>}
-              <h1>Профиль</h1>
-            </div>
-            <div className="scroll" ref={scrollRef} style={{ paddingBottom: 18 }}>
-              <div className="profilehead">
-                <div className="avatarbig">
-                  {profileUser && profileUser.photo ? <img src={profileUser.photo} alt="" /> : <User size={26} />}
-                </div>
-                <div>
-                  <div className="pname3">
-                    {profileUser ? [profileUser.firstName, profileUser.lastName].filter(Boolean).join(" ") : "Гость"}
-                  </div>
-                  {profileUser && profileUser.username && <div className="puser">@{profileUser.username}</div>}
-                  <div className="platchip">
-                    {platform === "telegram" ? "Telegram" : platform === "max" ? "MAX" : "Без привязки"}
-                  </div>
-                </div>
-              </div>
-
-              {!profileUser && (
-                <div className="guesthint">
-                  Откройте мини-апп из Telegram или MAX — тогда сюда подтянутся имя и фото профиля, а история заказов сохранится за вашим аккаунтом.
-                </div>
-              )}
-
-              <div className="sectionlabel">История заказов</div>
-              {orderHistory.length === 0 ? (
-                <div className="empty">
-                  <Ticket size={36} />
-                  <div>Пока нет заказов</div>
-                </div>
-              ) : (
-                orderHistory.map((h) => (
-                  <div className="histcard" key={h.num}>
-                    <div className="hrow">
-                      <span className="hnum">№ {h.num}</span>
-                      <span className="hdate">
-                        {new Date(h.date).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    </div>
-                    <div className="hitems">{h.items.map((l) => `${l.qty}× ${l.name}`).join(", ")}</div>
-                    <div className="hfoot">
-                      <span className="htotal">{money(h.total)}</span>
-                      <span className="hbadge">{h.serviceType === "pickup" ? "Самовывоз" : "Доставка"}</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </>
-        )}
-
-        {/* CONFIRM */}
-        {step === "confirm" && order && (
-          <div className="scroll confirmscroll" ref={scrollRef}>
-            <div className="confirmwrap">
-              <div className="ticket">
-                <div className="thead">
-                  <div className="flamewrap"><Flame color="#FF5A2A" size={26} /></div>
-                  <h2>Заказ принят!</h2>
-                  <div className="tnum">№ {order.num}</div>
-                </div>
-                <div className="perf" />
-                {order.items.map((l) => (
-                  <div className="tline" key={l.lineId}>
-                    <span><span className="tqty">{l.qty}×</span>{l.name}</span>
-                    <span>{money(l.price * l.qty)}</span>
-                  </div>
-                ))}
-                <div className="ttotal"><span>Итого</span><span>{money(order.total)}</span></div>
-                <div className="tmeta">
-                  {order.serviceType === "pickup"
-                    ? `Самовывоз · ${order.point?.name}`
-                    : `Доставка · ${order.address}`}
-                  <br />
-                  {order.timing === "asap" ? "Как можно скорее" : `Ко времени: ${order.scheduledTime || "—"}`}
-                  <br />
-                  {order.customer.name}, {order.customer.phone}
-                </div>
-              </div>
-
-              <div className="trackwrap">
-                <div className="sectionlabel" style={{ margin: "0 0 4px" }}>Статус заказа</div>
-                <div className="statuses">
-                  {statuses.map((s, i) => (
-                    <div className={`st ${i <= statusIdx ? "on" : ""}`} key={s}>
-                      <div className="sicon">{i < statusIdx ? <Check size={15} /> : <Flame size={15} />}</div>
-                      <div className="slabel">{s}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="coalbed" />
-              </div>
-
-              <div style={{ marginTop: 26 }}>
-                <button className="secondarybtn" onClick={newOrder}>Новый заказ</button>
-              </div>
-            </div>
-          </div>
-        )}
+<div class="hero">
+  <div class="hero-top">
+    <div>
+      <p class="hero-eyebrow">Xi'an · 29.08 — 08.09</p>
+      <h1 class="hero-title">Путеводитель<br>по <em>Сианю</em></h1>
+      <p class="hero-sub">10 дней на двоих · неспешный темп · гастрономия, история, прогулки</p>
+    </div>
+    <div class="seal">西安</div>
+  </div>
+
+  <div class="countdown-row">
+    <div class="cd-chip"><div class="cd-num" id="cdDays">—</div><div class="cd-label">дней до вылета</div></div>
+    <div class="cd-chip"><div class="cd-num">10</div><div class="cd-label">дней в Сиане</div></div>
+    <div class="cd-chip"><div class="cd-num">2</div><div class="cd-label">путешественника</div></div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- ================= OVERVIEW ================= -->
+  <div class="view active" id="view-overview">
+
+    <div class="section-title"><span class="dot"></span>Остаток бюджета</div>
+    <div class="dial-card">
+      <div class="dial">
+        <svg viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="52" fill="none" stroke="#3a3d54" stroke-width="10"/>
+          <circle id="dialArc" cx="60" cy="60" r="52" fill="none" stroke="#dda749" stroke-width="10" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="0"/>
+        </svg>
+        <div class="dial-center">
+          <div class="dial-pct" id="dialPct">100%</div>
+          <div class="dial-pct-label">В ЗАПАСЕ</div>
+        </div>
+      </div>
+      <div class="dial-info">
+        <div class="dial-info-row"><span class="k">Бюджет на двоих</span><span class="v">7 552 ¥</span></div>
+        <div class="dial-info-row"><span class="k">Потрачено (факт)</span><span class="v" id="spentVal">0 ¥</span></div>
+        <div class="dial-info-row"><span class="k">Остаток</span><span class="v pos" id="remainVal">7 552 ¥</span></div>
       </div>
     </div>
-  );
-}
+    <span class="reset-link" id="resetBtn">сбросить внесённые траты</span>
 
-createRoot(document.getElementById("root")).render(<App />);
+    <div class="section-title"><span class="dot"></span>Куда уходят деньги</div>
+    <p class="section-note">Сумма фактических трат по категориям за все отмеченные дни — сравнение с планом на всю поездку.</p>
+    <div class="cat-card" id="catCard"></div>
 
+    <div class="banner">
+      <span class="ic">📌</span>
+      <div><b>Главное правило:</b> не тратить всё осознанно каждый день. Норма — 400–500 ¥ в день на двоих, всё сэкономленное само уходит в резерв.</div>
+    </div>
+
+    <div class="section-title"><span class="dot"></span>Финансовый план · по категориям</div>
+    <p class="section-note">Ориентир на всю поездку, если распределять деньги не по дням, а по статьям расходов.</p>
+    <div class="env-table" id="envTable"></div>
+
+    <div class="section-title"><span class="dot"></span>Как физически разделить деньги</div>
+    <div class="env-table">
+      <div class="env-row"><span class="k">💵 Кошелёк 1 — на каждый день</span><span class="v">4 950 ¥</span></div>
+      <div class="env-row"><span class="k">🔒 Кошелёк 2 — резерв, не трогать</span><span class="v">2 602 ¥</span></div>
+    </div>
+    <p class="section-note">Резерв распечатывается только если ближе к 5–6 сентября траты идут дешевле плана — тогда часть можно пустить на хороший ресторан, Хуашань или шопинг.</p>
+
+    <div class="banner">
+      <span class="ic">🎫</span>
+      <div><b>Shaanxi History Museum</b> — вход бесплатный, но по резервации. Слоты открываются каждый день в 17:00, за 5 дней до посещения. На 2 сентября — ловите слот <b>28 августа после 17:00</b>.</div>
+    </div>
+
+    <p class="foot-note">Отель и авиабилеты уже оплачены и в бюджет не входят · камера −2 999 ¥ уже вычтена</p>
+  </div>
+
+  <!-- ================= DAYS ================= -->
+  <div class="view" id="view-days">
+    <div class="section-title"><span class="dot"></span>День за днём</div>
+    <p class="section-note">Нажмите на день, чтобы раскрыть план. 📍 открывает точку в Amap. Печать 印 отмечает прожитый день.</p>
+    <div id="daysList"></div>
+  </div>
+
+  <!-- ================= NOTES ================= -->
+  <div class="view" id="view-notes">
+    <div class="section-title"><span class="dot"></span>Перед поездкой</div>
+    <div id="checklist"></div>
+
+    <div class="section-title"><span class="dot"></span>Погода</div>
+    <div class="banner">
+      <span class="ic">🌦️</span>
+      <div>Проверять прогноз для Сианя каждое утро с 13 по 28 августа — особое внимание дождям, сильному ветру и тайфунам, которые могут задеть маршрут 29 августа — 7 сентября.</div>
+    </div>
+
+    <div class="section-title"><span class="dot"></span>Логистика</div>
+    <div class="env-table">
+      <div class="env-row"><span class="k">✈️ Туда · Новосибирск → Сиань</span><span class="v" style="font-size:11.5px">28.08, 23:40</span></div>
+      <div class="env-row"><span class="k">🛬 Прилёт в Сиань</span><span class="v" style="font-size:11.5px">29.08, 04:55</span></div>
+      <div class="env-row"><span class="k">🛫 Обратно · S7 5728</span><span class="v" style="font-size:11.5px">08.09, 05:55</span></div>
+    </div>
+    <p class="foot-note">Из отеля в аэропорт стоит выехать около 02:30 в ночь на 8 сентября.</p>
+  </div>
+
+</div>
+
+<div class="tabbar">
+  <div class="tabbar-inner">
+    <button class="tab-btn active" data-view="overview"><span class="ic">💰</span>Обзор</button>
+    <button class="tab-btn" data-view="days"><span class="ic">🗓️</span>Дни</button>
+    <button class="tab-btn" data-view="notes"><span class="ic">📋</span>Заметки</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ---- Telegram WebApp integration (safe no-op outside Telegram) ----
+  try{
+    const tg = window.Telegram && window.Telegram.WebApp;
+    if(tg){
+      tg.ready();
+      tg.expand();
+      tg.setHeaderColor && tg.setHeaderColor('#14151f');
+      tg.setBackgroundColor && tg.setBackgroundColor('#14151f');
+    }
+  }catch(e){}
+
+  // ---- Amap deep link helper ----
+  // Uses AMap's official URI API (uri.amap.com): opens the Amap app if installed,
+  // falls back to a web map otherwise. No coordinates needed — searches by name + city.
+  function amapLink(name){
+    return 'https://uri.amap.com/search?keyword=' + encodeURIComponent(name) + '&city=' + encodeURIComponent('西安');
+  }
+
+  // ---- Data ----
+  const TOTAL_BUDGET = 7552;
+  const CATEGORIES = [
+    {key:'food', label:'🍜 Еда и напитки', color:'#dda749', plan:3200},
+    {key:'transport', label:'🚇 Транспорт', color:'#5c8fae', plan:700},
+    {key:'shop', label:'🛍️ Билеты и шопинг', color:'#c1662f', plan:1650},
+  ];
+
+  const ENVELOPE = [
+    {label:'🍜 Еда и напитки', value:3200},
+    {label:'🚇 Транспорт', value:700},
+    {label:'🎟️ Достопримечательности', value:850},
+    {label:'🛍️ Шопинг / сувениры', value:700},
+    {label:'🧯 Резерв', value:2102},
+    {label:'ВСЕГО', value:7552, total:true},
+  ];
+
+  const CHECKLIST = [
+    {id:'alipay', text:'Alipay / WeChat Pay подготовлены и привязаны', sub:'обоим'},
+    {id:'museum', text:'Забронировать слот в Shaanxi History Museum', sub:'28.08 после 17:00, на 02.09'},
+    {id:'wall', text:'Уточнить билеты на City Wall / Tang Paradise', sub:'за пару дней до посещения'},
+    {id:'terracotta', text:'Проверить билеты на Терракотовую армию', sub:'на 31.08'},
+    {id:'weather', text:'Смотреть прогноз погоды каждое утро', sub:'13–28 августа'},
+    {id:'amap', text:'Установить Amap (高德地图) и включить офлайн-карты Сианя', sub:''},
+  ];
+
+  const DAYS = [
+    {
+      d:'29', m:'авг', wd:'Пт', emoji:'🛬', title:'Прилёт и вечерний Сиань', limit:500,
+      blocks:[
+        {t:'04:55', x:'Прилёт в Сиань. Ничего серьёзного до обеда не планируем.', p:['Xi\'an Xianyang International Airport 西安咸阳国际机场']},
+        {t:'Утро', x:'Аэропорт → отель (~150 ¥ трансфер), оставить багаж, позавтракать, поспать.'},
+        {t:'16:00–17:00', x:'Выходим в город.'},
+        {t:'17:00–22:00', x:'Bell Tower → Drum Tower → Muslim Quarter — первое знакомство с местной кухней.', p:['钟楼 Bell Tower Xi\'an','鼓楼 Drum Tower Xi\'an','回民街 Muslim Quarter']},
+      ],
+      note:'Лимит дня: транспорт 150 ¥, еда 250 ¥, напитки/перекусы 100 ¥.'
+    },
+    {
+      d:'30', m:'авг', wd:'Сб', emoji:'🧱', title:'Городская стена', limit:500,
+      blocks:[
+        {t:'14:00', x:'Едем к южным воротам City Wall.', p:['永宁门 South Gate City Wall Xi\'an']},
+        {t:'15:00–19:00', x:'Xi\'an City Wall — не пытаться пройти всю стену пешком, лучше взять велосипеды. Днём может быть жарко.', p:['西安城墙 Xi\'an City Wall']},
+        {t:'19:00–21:00', x:'Закат и вечерняя подсветка стены.'},
+        {t:'21:00', x:'Ужин.'},
+      ],
+      note:'Воскресенье — без музеев. Билеты ~110 ¥, транспорт 50 ¥, еда 250 ¥, напитки 90 ¥.'
+    },
+    {
+      d:'31', m:'авг', wd:'Вс', emoji:'🏺', title:'Терракотовая армия', limit:700,
+      blocks:[
+        {t:'07:30–08:00', x:'Выезд в Линтун.'},
+        {t:'09:30–13:00', x:'Emperor Qinshihuang Mausoleum Site Museum — билеты ~120 ¥ × 2 = 240 ¥.', p:['兵马俑 Terracotta Army Museum']},
+        {t:'После', x:'Обед, возвращение в Сиань.'},
+        {t:'Вечер', x:'Свободный — вы будете уставшими, без доп. точек.'},
+      ],
+      note:'Один из дней, где деньги тратим без сожалений: билеты 240 ¥, транспорт 150–200 ¥, еда 250 ¥.'
+    },
+    {
+      d:'01', m:'сен', wd:'Пн', emoji:'🌳', title:'Hancheng Lake + Daming Palace', limit:300,
+      blocks:[
+        {t:'Утро', x:'Спать сколько хочется — понедельник специально лёгкий.'},
+        {t:'12:00', x:'Обед.'},
+        {t:'14:00–18:00', x:'Прогулка: Hancheng Lake → район Daming Palace.', p:['汉城湖 Hancheng Lake Park','大明宫国家遗址公园 Daming Palace']},
+        {t:'Вечер', x:'Район отеля или полюбившееся за эти дни место.'},
+      ],
+      note:'Без платных входов. Транспорт 50–70 ¥, еда 180 ¥, напитки 50 ¥.'
+    },
+    {
+      d:'02', m:'сен', wd:'Вт', emoji:'🏛️', title:'Shaanxi History Museum + Big Wild Goose Pagoda', limit:400,
+      blocks:[
+        {t:'Утро', x:'Shaanxi History Museum — бесплатно, но нужна резервация (открывается за 5 дней в 17:00). Работает 08:30–19:00, последний вход 18:00.', p:['陕西历史博物馆 Shaanxi History Museum']},
+        {t:'После', x:'Обед.'},
+        {t:'15:00–18:00', x:'Giant Wild Goose Pagoda.', p:['大雁塔 Giant Wild Goose Pagoda']},
+        {t:'Вечер', x:'Прогулка по району Datang.'},
+      ],
+      note:'Музей 0 ¥ (если поймали слот), транспорт 70 ¥, еда 250 ¥, напитки 80 ¥.'
+    },
+    {
+      d:'03', m:'сен', wd:'Ср', emoji:'🌙', title:'Tang Paradise + Datang Everbright City', limit:600,
+      blocks:[
+        {t:'14:00', x:'Едем в Tang Paradise.', p:['大唐芙蓉园 Tang Paradise']},
+        {t:'14:30–19:00', x:'Tang Paradise — специально во второй половине дня: парк днём → закат → вечерняя подсветка.'},
+        {t:'19:00+', x:'Datang Everbright City.', p:['大唐不夜城 Datang Everbright City']},
+      ],
+      note:'Один из самых красивых вечеров поездки. Билеты ~200–300 ¥, транспорт 70 ¥, еда 200 ¥, напитки 50 ¥.'
+    },
+    {
+      d:'04', m:'сен', wd:'Чт', emoji:'🏯', title:'Small Wild Goose Pagoda + настоящий Сиань', limit:350,
+      blocks:[
+        {t:'11:00', x:'Поздний завтрак.'},
+        {t:'13:00', x:'Small Wild Goose Pagoda, дальше просто гуляем — без ещё пяти храмов.', p:['小雁塔 Small Wild Goose Pagoda']},
+        {t:'Вечер', x:'Yongxingfang / старые кварталы / семейный ресторан / чайная — на выбор.', p:['永兴坊 Yongxingfang']},
+      ],
+      note:'Менее туристический день: не список достопримечательностей, а атмосфера города.'
+    },
+    {
+      d:'05', m:'сен', wd:'Пт', emoji:'🛍️', title:'Шопинг и свободный день', limit:700,
+      blocks:[
+        {t:'Утро', x:'Поздний завтрак.'},
+        {t:'День', x:'Торговые центры и локальные магазины — чай, сладости, косметика, одежда, сувениры.', p:['SKP Xi\'an','永宁门 Grand Mercure shopping area']},
+      ],
+      note:'Без обязательных экскурсий: 500 ¥ на покупки, 200 ¥ на еду и транспорт.'
+    },
+    {
+      d:'06', m:'сен', wd:'Сб', emoji:'🏞️', title:'Huaqing Palace или свободный день', limit:500,
+      blocks:[
+        {t:'Вариант А', x:'Huaqing Palace в Линтуне → прогулка → возвращение в Сиань.', p:['华清宫 Huaqing Palace']},
+        {t:'Вариант Б', x:'Ничего не планировать — если чувствуете «мы уже столько посмотрели», просто гуляйте в любимом районе.'},
+      ],
+      note:'Решать по самочувствию — заставлять себя ехать не стоит.'
+    },
+    {
+      d:'07', m:'сен', wd:'Вс', emoji:'❤️', title:'Финальный день', limit:400,
+      blocks:[
+        {t:'11:00', x:'Поздний завтрак.'},
+        {t:'12:00–17:00', x:'Вернуться туда, что понравилось больше всего — например City Wall → старый город → любимая кофейня.'},
+        {t:'17:00–19:00', x:'Последние покупки.'},
+        {t:'19:00–20:00', x:'Ужин.'},
+        {t:'20:00–22:00', x:'В отель, полностью собрать вещи.'},
+        {t:'~02:30', x:'Выезд в аэропорт — рейс S7 5728 в 05:55 утра 8 сентября.', p:['Xi\'an Xianyang International Airport 西安咸阳国际机场']},
+      ],
+      note:'Без дальних экскурсий — максимально расслабленный день перед вылетом.'
+    },
+  ];
+
+  // ---- Storage ----
+  const LS_KEY = 'xian_guide_v2';
+  function emptySpend(){ return {food:null, transport:null, shop:null}; }
+  function loadState(){
+    try{
+      const s = JSON.parse(localStorage.getItem(LS_KEY));
+      if(s && s.spend) return s;
+    }catch(e){}
+    return {spend:{}, stamps:{}, checks:{}};
+  }
+  function saveState(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+  let state = loadState();
+  function getSpend(idx){
+    if(!state.spend[idx]) state.spend[idx] = emptySpend();
+    return state.spend[idx];
+  }
+
+  // ---- Tabs ----
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  tabBtns.forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      tabBtns.forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+      document.getElementById('view-'+btn.dataset.view).classList.add('active');
+      window.scrollTo({top:0, behavior:'instant'});
+    });
+  });
+
+  // ---- Countdown ----
+  const tripStart = new Date('2026-08-29T04:55:00+08:00');
+  const now = new Date();
+  const diffDays = Math.max(0, Math.ceil((tripStart - now) / 86400000));
+  document.getElementById('cdDays').textContent = diffDays;
+
+  // ---- Envelope table ----
+  const envTable = document.getElementById('envTable');
+  ENVELOPE.forEach(row=>{
+    const div = document.createElement('div');
+    div.className = 'env-row' + (row.total ? ' total' : '');
+    div.innerHTML = `<span class="k">${row.label}</span><span class="v">${row.value.toLocaleString('ru-RU')} ¥</span>`;
+    envTable.appendChild(div);
+  });
+
+  // ---- Checklist ----
+  const checklistEl = document.getElementById('checklist');
+  CHECKLIST.forEach(item=>{
+    const div = document.createElement('div');
+    div.className = 'check-item' + (state.checks[item.id] ? ' on' : '');
+    div.innerHTML = `
+      <div class="check-box">✓</div>
+      <div><div class="check-text">${item.text}</div>${item.sub ? `<div class="check-sub">${item.sub}</div>` : ''}</div>
+    `;
+    div.addEventListener('click', ()=>{
+      state.checks[item.id] = !state.checks[item.id];
+      div.classList.toggle('on');
+      saveState();
+    });
+    checklistEl.appendChild(div);
+  });
+
+  // ---- Category summary card (Overview) ----
+  const catCard = document.getElementById('catCard');
+  const catFillEls = {};
+  CATEGORIES.forEach(cat=>{
+    const row = document.createElement('div');
+    row.className = 'cat-row';
+    row.innerHTML = `
+      <div class="cat-row-top">
+        <span class="cat-label">${cat.label}</span>
+        <span class="cat-val"><b id="catSpent_${cat.key}">0</b> / ${cat.plan.toLocaleString('ru-RU')} ¥</span>
+      </div>
+      <div class="cat-bar-track"><div class="cat-bar-fill" id="catFill_${cat.key}" style="width:0%; background:${cat.color}"></div></div>
+    `;
+    catCard.appendChild(row);
+    catFillEls[cat.key] = {fill: null, spent: null};
+  });
+
+  // ---- Days list ----
+  const daysList = document.getElementById('daysList');
+  DAYS.forEach((day, idx)=>{
+    const card = document.createElement('div');
+    card.className = 'day-card' + (state.stamps[idx] ? ' done' : '');
+
+    const blocksHtml = day.blocks.map(b => `
+      <div class="tl-row">
+        <div class="tl-top"><div class="tl-time">${b.t}</div><div class="tl-text">${b.x}</div></div>
+        ${b.p ? `<div class="tl-pois">${b.p.map(name => `<a class="poi-btn" href="${amapLink(name)}" target="_blank" rel="noopener">📍 ${name.split(' ')[0]}</a>`).join('')}</div>` : ''}
+      </div>
+    `).join('');
+
+    const spend = getSpend(idx);
+
+    card.innerHTML = `
+      <div class="day-head">
+        <div class="day-date"><div class="d">${day.d}</div><div class="m">${day.m}</div></div>
+        <div class="day-body">
+          <div class="day-title"><span class="day-emoji">${day.emoji}</span>${day.title}</div>
+          <div class="day-sub">${day.wd} · день ${idx+1} из 10</div>
+        </div>
+        <div class="day-limit">${day.limit} ¥<span class="lbl">план</span></div>
+        <div class="chev">▾</div>
+      </div>
+      <div class="day-detail">
+        <div class="day-detail-inner">
+          <div class="timeline">${blocksHtml}</div>
+          <div class="day-note">${day.note}</div>
+          <div class="day-money">
+            <div class="day-money-head">
+              <span class="lbl">Факт по категориям</span>
+              <span class="sum" data-sum="${idx}">0 ¥</span>
+            </div>
+            <div class="cat-inputs">
+              <div class="money-field">
+                <label>🍜 Еда</label>
+                <input type="number" inputmode="numeric" placeholder="0" value="${spend.food ?? ''}" data-idx="${idx}" data-cat="food">
+              </div>
+              <div class="money-field">
+                <label>🚇 Транс.</label>
+                <input type="number" inputmode="numeric" placeholder="0" value="${spend.transport ?? ''}" data-idx="${idx}" data-cat="transport">
+              </div>
+              <div class="money-field">
+                <label>🛍️ Шопинг</label>
+                <input type="number" inputmode="numeric" placeholder="0" value="${spend.shop ?? ''}" data-idx="${idx}" data-cat="shop">
+              </div>
+            </div>
+            <div class="stamp-row">
+              <button class="stamp-btn${state.stamps[idx] ? ' on' : ''}" data-idx="${idx}">印 ${state.stamps[idx] ? 'День отмечен' : 'Отметить день'}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    card.querySelector('.day-head').addEventListener('click', ()=>{
+      card.classList.toggle('open');
+    });
+
+    const sumEl = card.querySelector(`[data-sum="${idx}"]`);
+    function daySum(){
+      const s = getSpend(idx);
+      return (s.food||0) + (s.transport||0) + (s.shop||0);
+    }
+    function refreshDaySum(){
+      sumEl.textContent = daySum().toLocaleString('ru-RU') + ' ¥';
+    }
+    refreshDaySum();
+
+    card.querySelectorAll('input').forEach(input=>{
+      input.addEventListener('click', e=>e.stopPropagation());
+      input.addEventListener('input', ()=>{
+        const cat = input.dataset.cat;
+        const val = input.value === '' ? null : parseFloat(input.value);
+        getSpend(idx)[cat] = (val == null || isNaN(val)) ? null : val;
+        saveState();
+        refreshDaySum();
+        updateBudget();
+      });
+    });
+
+    const stampBtn = card.querySelector('.stamp-btn');
+    stampBtn.addEventListener('click', e=>{
+      e.stopPropagation();
+      state.stamps[idx] = !state.stamps[idx];
+      stampBtn.classList.toggle('on');
+      stampBtn.textContent = '印 ' + (state.stamps[idx] ? 'День отмечен' : 'Отметить день');
+      card.classList.toggle('done');
+      saveState();
+    });
+
+    daysList.appendChild(card);
+  });
+
+  // ---- Budget dial + category totals ----
+  const dialArc = document.getElementById('dialArc');
+  const dialPct = document.getElementById('dialPct');
+  const spentVal = document.getElementById('spentVal');
+  const remainVal = document.getElementById('remainVal');
+  const CIRC = 2 * Math.PI * 52;
+
+  function updateBudget(){
+    let totalSpent = 0;
+    const catTotals = {food:0, transport:0, shop:0};
+
+    Object.keys(state.spend).forEach(idx=>{
+      const s = state.spend[idx];
+      ['food','transport','shop'].forEach(k=>{
+        const v = s[k];
+        if(v != null && !isNaN(v)){
+          catTotals[k] += v;
+          totalSpent += v;
+        }
+      });
+    });
+
+    const remain = TOTAL_BUDGET - totalSpent;
+    const pct = Math.max(0, Math.min(1, remain / TOTAL_BUDGET));
+
+    dialArc.style.strokeDasharray = CIRC;
+    dialArc.style.strokeDashoffset = CIRC * (1 - pct);
+    dialArc.style.stroke = remain < 0 ? '#af322c' : '#dda749';
+
+    dialPct.textContent = Math.round(pct*100) + '%';
+    spentVal.textContent = totalSpent.toLocaleString('ru-RU') + ' ¥';
+    remainVal.textContent = remain.toLocaleString('ru-RU') + ' ¥';
+    remainVal.className = 'v ' + (remain < 0 ? 'neg' : 'pos');
+
+    CATEGORIES.forEach(cat=>{
+      const spent = catTotals[cat.key];
+      const pctCat = Math.min(1, spent / cat.plan);
+      const fillEl = document.getElementById('catFill_' + cat.key);
+      const spentEl = document.getElementById('catSpent_' + cat.key);
+      fillEl.style.width = (pctCat*100) + '%';
+      fillEl.classList.toggle('over', spent > cat.plan);
+      spentEl.textContent = spent.toLocaleString('ru-RU');
+    });
+  }
+  updateBudget();
+
+  document.getElementById('resetBtn').addEventListener('click', ()=>{
+    state.spend = {};
+    document.querySelectorAll('.money-field input').forEach(i=>i.value='');
+    document.querySelectorAll('[data-sum]').forEach(el=>el.textContent='0 ¥');
+    saveState();
+    updateBudget();
+  });
+
+})();
 </script>
 </body>
 </html>
